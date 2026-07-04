@@ -44,3 +44,27 @@ wsl --version
 ## Git Rule
 
 All meaningful milestones should be committed. Do not mix unrelated refactors with feature work.
+
+## Backend Commands
+
+Create and install the backend environment:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python -m pip install --upgrade pip
+.\.venv\Scripts\python -m pip install -e ".[dev]"
+cd ..
+```
+
+Run backend tests:
+
+```powershell
+backend\.venv\Scripts\python -m pytest backend\tests -q
+```
+
+Run backend dev server:
+
+```powershell
+backend\.venv\Scripts\python -m uvicorn app.main:app --app-dir backend --reload
+```

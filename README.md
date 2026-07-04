@@ -61,3 +61,17 @@ See `docs/DEVELOPMENT_SETUP.md` for local setup notes.
 ## Git Workflow
 
 Use focused commits for meaningful milestones. Keep documentation updated when architecture decisions change.
+
+## Backend Skeleton
+
+The backend skeleton provides:
+
+- FastAPI app factory.
+- `/api/health` endpoint.
+- Pydantic settings.
+- Standard application error response.
+- SQLAlchemy base, engine, and session factory.
+- Alembic environment.
+- Pytest test suite.
+
+Backend commands are documented in `backend/README.md`.
