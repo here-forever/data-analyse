@@ -454,6 +454,14 @@ Frontend style:
 - Analysis/report pages can be more colorful and data-rich.
 - Do not build a generic gray admin template.
 - Do not make pages overly decorative at the expense of data readability.
+- Use the Figma Make reference "Analytics Dashboard with Cross Filtering" as an information-architecture reference, not as a visual template to copy directly.
+- Borrow its useful dashboard structure: clear page header, global filters, KPI/summary metric band, active selection feedback, multi-panel chart grid, full-width detail chart/table areas, and cross-filtering interactions between visuals.
+- Avoid the reference's overly plain white/gray feeling. The product should use a softer, more artistic data-workbench style with gentle layered backgrounds, tasteful multi-color accents, warm/cool contrast, and color-coded analytical surfaces.
+- The interface should feel friendly and creative while still being professional: soft canvas tones, restrained shadows, subtle borders, calm typography, and polished spacing.
+- Do not make the system look like a hard-core dark cyber/tech dashboard, a generic SaaS admin template, or a single-hue BI clone.
+- Keep data readability first: colorful surfaces must not reduce table legibility, chart contrast, form clarity, or dense workflow efficiency.
+- Prefer reusable visual primitives for metrics, filters, panels, data tables, status chips, and chart containers so future SQL, chart, dashboard, and report pages share a coherent style.
+- For dashboard/report pages, support cross-filtering and visible active selection states as a first-class interaction pattern.
 
 Layout direction:
 

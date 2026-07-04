@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { CleaningWorkbenchPage } from "../features/cleaning/CleaningWorkbenchPage";
 import { DatasetPage } from "../features/datasets/DatasetPage";
 import { ImportWizardPage } from "../features/imports/ImportWizardPage";
+import { SqlWorkspacePage } from "../features/sql/SqlWorkspacePage";
 import { PlaceholderPage } from "./PlaceholderPage";
 
 export const routePlaceholders: Record<string, ReactNode> = {
@@ -21,12 +22,7 @@ export const routePlaceholders: Record<string, ReactNode> = {
   "/import": <ImportWizardPage />,
   "/datasets": <DatasetPage />,
   "/cleaning": <CleaningWorkbenchPage />,
-  "/sql": (
-    <PlaceholderPage
-      title="SQL workspace"
-      description="Run safe project-scoped SQL and save results as reusable data views."
-    />
-  ),
+  "/sql": <SqlWorkspacePage />,
   "/charts": (
     <PlaceholderPage
       title="Charts"

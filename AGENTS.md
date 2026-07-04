@@ -32,6 +32,15 @@ The first stage should not become an overbuilt SaaS platform, and it should not 
 - Frontend app shell, API access, state stores, shared UI, and feature pages should remain separated.
 - New features should connect to the main data flow instead of becoming isolated demos.
 
+## Frontend Design Constraints
+
+- Use the Figma Make reference "Analytics Dashboard with Cross Filtering" as an information-architecture reference, not as a visual template to copy directly.
+- Borrow its useful dashboard structure: page header, global filters, KPI metric band, active selection feedback, multi-panel chart grid, full-width detail areas, and cross-filtering interactions.
+- Avoid a plain white/gray dashboard look. The UI should become a softer, more artistic, colorful data workbench with gentle layered backgrounds, tasteful multi-color accents, and warm/cool contrast.
+- Do not push the product into a hard-core cyber/tech style or a generic gray SaaS admin template.
+- Keep data readability first: color, shadows, and decorative surfaces must not reduce table legibility, form clarity, or workflow efficiency.
+- Build reusable visual primitives for metrics, filters, panels, tables, status chips, and chart/report containers so future analysis pages feel coherent.
+
 ## Confirmed Technical Direction
 
 - Backend: Python, FastAPI, PostgreSQL, SQLAlchemy, Alembic, Pydantic.
