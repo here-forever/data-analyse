@@ -59,7 +59,7 @@ email: admin@example.com
 password: admin123
 ```
 
-These endpoints currently use an in-memory development service so they can run before Docker/PostgreSQL is installed. Persistent SQLAlchemy-backed storage will replace this service in a later database milestone.
+The auth, project, project member, and resource permission endpoints use SQLAlchemy repositories. Tests run against isolated in-memory SQLite, while Docker development uses PostgreSQL.
 
 ## File Import Preview API
 

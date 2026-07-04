@@ -1,16 +1,25 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.auth.service import User
+from app.core.database import get_db_session
+from app.permissions.repository import PermissionRepository
 from app.permissions.schemas import (
     ResourcePermissionCreateRequest,
     ResourcePermissionResponse,
 )
-from app.permissions.service import ResourcePermission, permission_service
+from app.permissions.service import PermissionService, ResourcePermission
 
 router = APIRouter(prefix="/permissions", tags=["permissions"])
+
+
+def get_permission_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> PermissionService:
+    return PermissionService(PermissionRepository(session))
 
 
 def to_permission_response(permission: ResourcePermission) -> ResourcePermissionResponse:
@@ -33,24 +42,19 @@ def to_permission_response(permission: ResourcePermission) -> ResourcePermission
 def create_resource_permission(
     payload: ResourcePermissionCreateRequest,
     _current_user: Annotated[User, Depends(get_current_user)],
+    permissions: Annotated[PermissionService, Depends(get_permission_service)],
 ) -> ResourcePermissionResponse:
-    permission = permission_service.create_resource_permission(
-        project_id=payload.project_id,
-        resource_type=payload.resource_type,
-        resource_id=payload.resource_id,
-        principal_type=payload.principal_type,
-        principal_id=payload.principal_id,
-        actions=payload.actions,
-    )
+    permission = permissions.create_from_request(payload)
     return to_permission_response(permission)
 
 
 @router.get("/resources", response_model=list[ResourcePermissionResponse])
 def list_resource_permissions(
     _current_user: Annotated[User, Depends(get_current_user)],
+    permissions: Annotated[PermissionService, Depends(get_permission_service)],
     project_id: str = Query(),
 ) -> list[ResourcePermissionResponse]:
     return [
         to_permission_response(permission)
-        for permission in permission_service.list_resource_permissions(project_id)
+        for permission in permissions.list_resource_permissions(project_id)
     ]

@@ -2,16 +2,19 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_auth_service, get_current_user
 from app.auth.schemas import CurrentUserResponse, LoginRequest, TokenResponse
-from app.auth.service import User, auth_service
+from app.auth.service import AuthService, User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest) -> TokenResponse:
-    token = auth_service.authenticate(payload.email, payload.password)
+def login(
+    payload: LoginRequest,
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+) -> TokenResponse:
+    token = auth.authenticate(payload.email, payload.password)
     return TokenResponse(access_token=token)
 
 
