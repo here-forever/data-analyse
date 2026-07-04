@@ -10,6 +10,10 @@ class Base(DeclarativeBase):
     pass
 
 
+def import_models() -> None:
+    import app.models  # noqa: F401
+
+
 def get_engine(database_url: str | None = None) -> Engine:
     settings = get_settings()
     return create_engine(database_url or settings.database_url, pool_pre_ping=True)

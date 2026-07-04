@@ -135,6 +135,12 @@ Reset Docker-managed database/cache volumes:
 docker compose down -v
 ```
 
+Run backend database migrations:
+
+```powershell
+docker compose exec backend python -m alembic upgrade head
+```
+
 Local URLs:
 
 ```text

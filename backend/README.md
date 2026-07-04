@@ -84,3 +84,13 @@ The backend container uses:
 DATABASE_URL=postgresql+psycopg://data_analysis_user:data_analysis_password@postgres:5432/data_analysis_system
 REDIS_URL=redis://redis:6379/0
 ```
+
+## Database Migrations
+
+Run Alembic migrations inside the backend container:
+
+```powershell
+docker compose exec backend python -m alembic upgrade head
+```
+
+The initial migration creates core MVP metadata tables for users, projects, project members, resource permissions, uploaded files, file import previews, datasets, dataset fields, dataset table maps, tasks, operation logs, and lineage edges.
