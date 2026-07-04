@@ -12,7 +12,7 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { listTasks, retryTask, type TaskItem, type TaskStatus } from "./api";
 
@@ -354,12 +354,7 @@ function TaskRow({
         <ProgressBar progress={task.progress} />
       </td>
       <td className="border-b border-line px-4 py-3">
-        <p className="text-xs font-semibold uppercase text-muted">
-          {task.related_resource_type ?? "Resource"}
-        </p>
-        <p className="mt-1 max-w-[220px] truncate font-mono text-xs text-ink">
-          {task.related_resource_id ?? "-"}
-        </p>
+        <RelatedResourceLink task={task} />
       </td>
       <td className="border-b border-line px-4 py-3 text-xs text-muted">
         {formatDate(task.finished_at ?? task.created_at)}
@@ -380,6 +375,29 @@ function TaskRow({
         )}
       </td>
     </tr>
+  );
+}
+
+function RelatedResourceLink({ task }: { task: TaskItem }) {
+  const href = buildResourceHref(task);
+
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase text-muted">
+        {task.related_resource_type ?? "Resource"}
+      </p>
+      <p className="mt-1 max-w-[220px] truncate font-mono text-xs text-ink">
+        {task.related_resource_id ?? "-"}
+      </p>
+      {href ? (
+        <Link
+          className="mt-2 inline-flex h-8 items-center rounded-md border border-brand/20 bg-blue-50 px-3 text-xs font-semibold text-brand transition hover:bg-blue-100"
+          to={href}
+        >
+          Open resource
+        </Link>
+      ) : null}
+    </div>
   );
 }
 
@@ -546,4 +564,28 @@ function formatDate(value: string | null) {
     minute: "2-digit",
     month: "short",
   }).format(new Date(value));
+}
+
+function buildResourceHref(task: TaskItem): string | null {
+  if (!task.project_id || !task.related_resource_id) {
+    return null;
+  }
+
+  const projectParam = `project_id=${encodeURIComponent(task.project_id)}`;
+  const resourceParam = encodeURIComponent(task.related_resource_id);
+
+  if (task.related_resource_type === "dataset") {
+    return `/datasets?${projectParam}&dataset_id=${resourceParam}`;
+  }
+  if (task.related_resource_type === "data_view") {
+    return `/charts?${projectParam}&data_view_id=${resourceParam}`;
+  }
+  if (task.related_resource_type === "chart") {
+    return `/charts?${projectParam}&chart_id=${resourceParam}`;
+  }
+  if (task.related_resource_type === "dashboard") {
+    return `/dashboards?${projectParam}&dashboard_id=${resourceParam}`;
+  }
+
+  return null;
 }

@@ -94,6 +94,7 @@ Initial core tables have been modeled and migrated:
 - Dashboard/report source page with basic free-layout report mode.
 - Task center page with project filtering, status summary, workflow coverage, and recent task table.
 - Task center retry entry for failed or retryable tasks, with immediate list refresh and retry request feedback.
+- Task center related-resource links for datasets, data views, charts, and dashboards, with target pages reading route query parameters for selection/highlighting.
 - Placeholder pages remain only for features not yet implemented.
 - Frontend API client tests.
 
@@ -113,9 +114,9 @@ Initial core tables have been modeled and migrated:
 - Frontend is reachable at `http://127.0.0.1:5173`.
 - Backend health check is reachable at `http://127.0.0.1:8000/api/health`.
 - Alembic migration has been applied to Docker PostgreSQL.
-- Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, and retry request flow were verified through tests or API flows.
+- Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, and related-resource navigation were verified through tests or API flows.
 - Backend test suite passed in Docker: 42 tests.
-- Frontend test suite passed: 21 tests.
+- Frontend test suite passed: 23 tests.
 - Frontend lint passed.
 - Frontend build previously passed and should be rerun after each UI milestone.
 
@@ -146,9 +147,8 @@ Future work must preserve these boundaries:
 
 The next implementation step should connect task retry placeholders to resource-aware recovery flows:
 
-1. Add task center links from related resources to datasets, data views, charts, and dashboards.
-2. Define replay payload metadata for each retryable task type.
-3. Add a lightweight in-process retry executor for selected safe operations, or defer execution to the future queue worker.
-4. Then implement the external database read-only connector MVP.
+1. Define replay payload metadata for each retryable task type.
+2. Add a lightweight in-process retry executor for selected safe operations, or defer execution to the future queue worker.
+3. Then implement the external database read-only connector MVP.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

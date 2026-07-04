@@ -77,6 +77,18 @@ describe("TaskCenterPage", () => {
     expect(screen.getByText("SQL data view")).toBeInTheDocument();
     expect(screen.getByText("Template missing")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Open resource" })).toEqual([
+      expect.objectContaining({
+        href: expect.stringContaining(
+          "/charts?project_id=prj_demo&data_view_id=view_1",
+        ),
+      }),
+      expect.objectContaining({
+        href: expect.stringContaining(
+          "/dashboards?project_id=prj_demo&dashboard_id=dash_1",
+        ),
+      }),
+    ]);
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();

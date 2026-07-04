@@ -47,11 +47,14 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
   const [searchParams] = useSearchParams();
   const isCharts = mode === "charts";
   const initialProjectId = searchParams.get("project_id") ?? DEFAULT_PROJECT_ID;
+  const targetDataViewId = searchParams.get("data_view_id");
+  const targetChartId = searchParams.get("chart_id");
+  const targetDashboardId = searchParams.get("dashboard_id");
   const [projectId, setProjectId] = useState(initialProjectId);
   const [submittedProjectId, setSubmittedProjectId] =
     useState(initialProjectId);
   const [selectedDataViewId, setSelectedDataViewId] = useState<string | null>(
-    null,
+    targetDataViewId,
   );
   const [layoutMode, setLayoutMode] = useState<"dashboard" | "report">(
     "dashboard",
@@ -75,19 +78,6 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
     () => dataViewsQuery.data?.items ?? [],
     [dataViewsQuery.data],
   );
-  const selectedDataView = useMemo(
-    () =>
-      dataViews.find((dataView) => dataView.id === selectedDataViewId) ??
-      dataViews[0] ??
-      null,
-    [dataViews, selectedDataViewId],
-  );
-
-  const previewQuery = useQuery({
-    queryKey: ["data-view-preview", selectedDataView?.id, PAGE_SIZE],
-    queryFn: () => getDataViewPreview(selectedDataView?.id ?? "", 1, PAGE_SIZE),
-    enabled: Boolean(selectedDataView?.id),
-  });
 
   const chartsQuery = useQuery({
     queryKey: ["charts", submittedProjectId],
@@ -101,8 +91,34 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
     enabled: submittedProjectId.trim().length > 0 && mode === "dashboards",
   });
 
-  const charts = chartsQuery.data?.items ?? [];
-  const dashboards = dashboardsQuery.data?.items ?? [];
+  const charts = useMemo(
+    () => chartsQuery.data?.items ?? [],
+    [chartsQuery.data],
+  );
+  const dashboards = useMemo(
+    () => dashboardsQuery.data?.items ?? [],
+    [dashboardsQuery.data],
+  );
+  const targetChart = useMemo(
+    () => charts.find((chart) => chart.id === targetChartId) ?? null,
+    [charts, targetChartId],
+  );
+  const effectiveSelectedDataViewId =
+    selectedDataViewId ?? targetChart?.data_view_id ?? null;
+  const selectedDataView = useMemo(
+    () =>
+      dataViews.find(
+        (dataView) => dataView.id === effectiveSelectedDataViewId,
+      ) ??
+      dataViews[0] ??
+      null,
+    [dataViews, effectiveSelectedDataViewId],
+  );
+  const previewQuery = useQuery({
+    queryKey: ["data-view-preview", selectedDataView?.id, PAGE_SIZE],
+    queryFn: () => getDataViewPreview(selectedDataView?.id ?? "", 1, PAGE_SIZE),
+    enabled: Boolean(selectedDataView?.id),
+  });
   const selectedDataViewCharts = selectedDataView
     ? charts.filter((chart) => chart.data_view_id === selectedDataView.id)
     : [];
@@ -282,6 +298,7 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
               createdChart={createChartMutation.data}
               createError={createChartMutation.error}
               isCreating={createChartMutation.isPending}
+              targetChartId={targetChartId}
               onChartStateChange={(nextState) => {
                 setChartState(nextState);
                 setChartStateDataViewId(selectedDataView?.id ?? null);
@@ -305,6 +322,7 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
               isCreating={createDashboardMutation.isPending}
               selectedChartIds={selectedChartIds}
               hasManualChartSelection={hasManualChartSelection}
+              targetDashboardId={targetDashboardId}
               onSelectedChartIdsChange={(chartIds) => {
                 setSelectedChartIds(chartIds);
                 setHasManualChartSelection(true);
@@ -340,6 +358,7 @@ function ChartResourcePanel({
   createdChart,
   createError,
   isCreating,
+  targetChartId,
   onChartStateChange,
   onCreate,
 }: {
@@ -353,6 +372,7 @@ function ChartResourcePanel({
   createdChart?: ChartDefinition;
   createError: Error | null;
   isCreating: boolean;
+  targetChartId: string | null;
   onChartStateChange: (nextState: ChartBuilderState) => void;
   onCreate: () => void;
 }) {
@@ -384,6 +404,7 @@ function ChartResourcePanel({
             renderItem={(chart) => (
               <ResourceTile
                 key={chart.id}
+                isActive={chart.id === targetChartId}
                 title={chart.name}
                 meta={`${chart.chart_type} - ${chart.data_view_id}`}
               />
@@ -529,6 +550,7 @@ function DashboardResourcePanel({
   onLayoutModeChange,
   selectedChartIds,
   hasManualChartSelection,
+  targetDashboardId,
   onSelectedChartIdsChange,
   onCreate,
 }: {
@@ -543,6 +565,7 @@ function DashboardResourcePanel({
   onLayoutModeChange: (mode: "dashboard" | "report") => void;
   selectedChartIds: string[];
   hasManualChartSelection: boolean;
+  targetDashboardId: string | null;
   onSelectedChartIdsChange: (chartIds: string[]) => void;
   onCreate: () => void;
 }) {
@@ -581,6 +604,7 @@ function DashboardResourcePanel({
             renderItem={(dashboard) => (
               <ResourceTile
                 key={dashboard.id}
+                isActive={dashboard.id === targetDashboardId}
                 title={dashboard.name}
                 meta={`${String(dashboard.layout.mode ?? "dashboard")} - ${dashboard.id}`}
               />
@@ -677,9 +701,23 @@ function ResourceList<T>({
   );
 }
 
-function ResourceTile({ title, meta }: { title: string; meta: string }) {
+function ResourceTile({
+  title,
+  meta,
+  isActive = false,
+}: {
+  title: string;
+  meta: string;
+  isActive?: boolean;
+}) {
   return (
-    <div className="rounded-md border border-line bg-white px-3 py-3">
+    <div
+      aria-current={isActive ? "true" : undefined}
+      className={[
+        "rounded-md border px-3 py-3",
+        isActive ? "border-brand bg-blue-50" : "border-line bg-white",
+      ].join(" ")}
+    >
       <p className="truncate text-sm font-semibold text-ink">{title}</p>
       <p className="mt-1 truncate text-xs text-muted">{meta}</p>
     </div>

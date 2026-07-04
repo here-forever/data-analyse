@@ -279,6 +279,142 @@ describe("DataViewSourcePage", () => {
       );
     });
   });
+
+  test("selects a data view from the route query parameters", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/data-views?")) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              dataViewFixture("view_1", "Orders View"),
+              dataViewFixture("view_2", "Target View"),
+            ],
+          }),
+        );
+      }
+
+      if (url.includes("/data-views/view_2/preview")) {
+        return Promise.resolve(
+          jsonResponse({
+            data_view: dataViewFixture("view_2", "Target View"),
+            page: 1,
+            page_size: 20,
+            total_rows: 1,
+            rows: [{ _das_row_id: 1, customer: "Lin", amount: 42 }],
+          }),
+        );
+      }
+
+      if (url.includes("/charts?")) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      return Promise.resolve(jsonResponse({}));
+    });
+
+    renderWithProviders(<DataViewSourcePage mode="charts" />, {
+      route: "/charts?project_id=prj_demo&data_view_id=view_2",
+    });
+
+    expect(await screen.findByText("Target View")).toBeInTheDocument();
+    expect(await screen.findByText("Lin")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/api/data-views/view_2/preview?page=1&page_size=20",
+        expect.any(Object),
+      );
+    });
+  });
+
+  test("highlights chart and dashboard resources from route query parameters", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/data-views?")) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [dataViewFixture("view_1", "Orders View")],
+          }),
+        );
+      }
+
+      if (url.includes("/data-views/view_1/preview")) {
+        return Promise.resolve(
+          jsonResponse({
+            data_view: dataViewFixture("view_1", "Orders View"),
+            page: 1,
+            page_size: 20,
+            total_rows: 1,
+            rows: [{ _das_row_id: 1, customer: "Ada", amount: 19.5 }],
+          }),
+        );
+      }
+
+      if (url.includes("/charts?")) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              {
+                id: "chart_1",
+                project_id: "prj_demo",
+                data_view_id: "view_1",
+                name: "Orders Chart",
+                chart_type: "bar",
+                config: { dimension: "customer", metric: "amount" },
+              },
+            ],
+          }),
+        );
+      }
+
+      if (url.includes("/dashboards?")) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              {
+                id: "dash_1",
+                project_id: "prj_demo",
+                name: "Target Dashboard",
+                layout: {
+                  mode: "dashboard",
+                  items: [{ chart_id: "chart_1", x: 0, y: 0, w: 6, h: 4 }],
+                },
+              },
+            ],
+          }),
+        );
+      }
+
+      return Promise.resolve(jsonResponse({}));
+    });
+
+    const chartRender = renderWithProviders(
+      <DataViewSourcePage mode="charts" />,
+      {
+        route: "/charts?project_id=prj_demo&chart_id=chart_1",
+      },
+    );
+
+    expect(
+      (await screen.findByText("Orders Chart")).closest(
+        "[aria-current='true']",
+      ),
+    ).not.toBeNull();
+
+    chartRender.unmount();
+
+    renderWithProviders(<DataViewSourcePage mode="dashboards" />, {
+      route: "/dashboards?project_id=prj_demo&dashboard_id=dash_1",
+    });
+
+    expect(
+      (await screen.findByText("Target Dashboard")).closest(
+        "[aria-current='true']",
+      ),
+    ).not.toBeNull();
+  });
 });
 
 function jsonResponse(payload: unknown): Response {
@@ -286,4 +422,32 @@ function jsonResponse(payload: unknown): Response {
     ok: true,
     json: async () => payload,
   } as Response;
+}
+
+function dataViewFixture(id: string, name: string) {
+  return {
+    id,
+    project_id: "prj_demo",
+    name,
+    description: null,
+    source_type: "sql_query",
+    source_id: null,
+    source_sql: "SELECT customer, amount FROM dataset_1",
+    physical_table_name: `dv_${id}`,
+    row_count: 1,
+    fields: [
+      {
+        name: "customer",
+        inferred_type: "text",
+        nullable: false,
+        order: 0,
+      },
+      {
+        name: "amount",
+        inferred_type: "decimal",
+        nullable: false,
+        order: 1,
+      },
+    ],
+  };
 }
