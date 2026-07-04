@@ -1,4 +1,5 @@
 import { apiClient } from "../../lib/apiClient";
+import type { Dataset } from "../datasets/api";
 
 export type DatabaseType = "postgresql" | "mysql";
 export type ExternalConnectionStatus = "untested" | "available" | "failed";
@@ -41,6 +42,46 @@ export interface ExternalDatabaseConnectionTestResponse {
   message: string;
 }
 
+export interface ExternalTableColumn {
+  name: string;
+  data_type: string;
+  inferred_type: string;
+  nullable: boolean;
+  order: number;
+}
+
+export interface ExternalTable {
+  schema_name: string;
+  table_name: string;
+  columns: ExternalTableColumn[];
+}
+
+export interface ExternalDatabaseSchemaResponse {
+  connection: ExternalDatabaseConnection;
+  tables: ExternalTable[];
+}
+
+export interface ExternalTableImportPayload {
+  project_id: string;
+  dataset_name: string;
+  schema_name: string;
+  table_name: string;
+  limit: number;
+}
+
+export interface ExternalSqlImportPayload {
+  project_id: string;
+  dataset_name: string;
+  sql: string;
+  limit: number;
+}
+
+export interface ExternalDatasetImportResponse {
+  dataset: Dataset;
+  source_type: "external_table" | "external_sql";
+  row_count: number;
+}
+
 export async function createExternalDatabaseConnection(
   payload: ExternalDatabaseConnectionCreatePayload,
 ): Promise<ExternalDatabaseConnection> {
@@ -66,5 +107,33 @@ export async function testExternalDatabaseConnection(
 ): Promise<ExternalDatabaseConnectionTestResponse> {
   return apiClient.post<ExternalDatabaseConnectionTestResponse>(
     `/data-sources/external-databases/${connectionId}/test`,
+  );
+}
+
+export async function inspectExternalDatabaseSchema(
+  connectionId: string,
+): Promise<ExternalDatabaseSchemaResponse> {
+  return apiClient.get<ExternalDatabaseSchemaResponse>(
+    `/data-sources/external-databases/${connectionId}/schema`,
+  );
+}
+
+export async function importExternalTable(
+  connectionId: string,
+  payload: ExternalTableImportPayload,
+): Promise<ExternalDatasetImportResponse> {
+  return apiClient.post<ExternalDatasetImportResponse>(
+    `/data-sources/external-databases/${connectionId}/import-table`,
+    payload,
+  );
+}
+
+export async function importExternalSql(
+  connectionId: string,
+  payload: ExternalSqlImportPayload,
+): Promise<ExternalDatasetImportResponse> {
+  return apiClient.post<ExternalDatasetImportResponse>(
+    `/data-sources/external-databases/${connectionId}/import-sql`,
+    payload,
   );
 }

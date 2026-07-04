@@ -163,6 +163,46 @@ describe("DataSourcesPage", () => {
         }
 
         if (
+          url.endsWith("/data-sources/external-databases/src_1/schema") &&
+          init?.method === "GET"
+        ) {
+          return Promise.resolve(jsonResponse(schemaPayload));
+        }
+
+        if (
+          url.endsWith("/data-sources/external-databases/src_1/import-table") &&
+          init?.method === "POST"
+        ) {
+          expect(init.body).toContain('"schema_name":"public"');
+          expect(init.body).toContain('"table_name":"orders"');
+          expect(init.body).toContain('"dataset_name":"Orders"');
+          return Promise.resolve(
+            jsonResponse({
+              dataset: importedTableDataset,
+              row_count: 2,
+              source_type: "external_table",
+            }),
+          );
+        }
+
+        if (
+          url.endsWith("/data-sources/external-databases/src_1/import-sql") &&
+          init?.method === "POST"
+        ) {
+          expect(init.body).toContain(
+            '"sql":"SELECT region, amount FROM orders"',
+          );
+          expect(init.body).toContain('"dataset_name":"SQL Orders"');
+          return Promise.resolve(
+            jsonResponse({
+              dataset: importedSqlDataset,
+              row_count: 1,
+              source_type: "external_sql",
+            }),
+          );
+        }
+
+        if (
           url.endsWith("/data-sources/external-databases/src_1/test") &&
           init?.method === "POST"
         ) {
@@ -224,6 +264,33 @@ describe("DataSourcesPage", () => {
     expect(
       await screen.findByText("Read-only connection test succeeded"),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Discover" }));
+
+    expect(await screen.findByText("public.orders")).toBeInTheDocument();
+    await user.click(screen.getByText("public.orders").closest("button")!);
+    expect(screen.getByDisplayValue("Orders")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Import table" }));
+
+    expect(
+      await screen.findByText("Created Orders (2 rows)"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open dataset" })).toHaveAttribute(
+      "href",
+      "/datasets?project_id=prj_demo&dataset_id=dataset_table_1",
+    );
+
+    const sqlDatasetNameInput = screen.getByLabelText("Dataset name", {
+      selector: "#external-sql-dataset-name",
+    });
+    await user.type(sqlDatasetNameInput, "SQL Orders");
+    const sqlInput = screen.getByLabelText("SQL");
+    await user.clear(sqlInput);
+    await user.type(sqlInput, "SELECT region, amount FROM orders");
+    await user.click(screen.getByRole("button", { name: "Import SQL result" }));
+
+    expect(
+      await screen.findByText("Created SQL Orders (1 rows)"),
+    ).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         "http://127.0.0.1:8000/api/data-sources/external-databases/src_1/test",
@@ -252,4 +319,64 @@ const connectionPayload = {
   read_only: true,
   created_at: "2026-07-04T10:00:00Z",
   updated_at: "2026-07-04T10:01:00Z",
+};
+
+const schemaPayload = {
+  connection: connectionPayload,
+  tables: [
+    {
+      schema_name: "public",
+      table_name: "orders",
+      columns: [
+        {
+          name: "customer",
+          data_type: "TEXT",
+          inferred_type: "text",
+          nullable: false,
+          order: 0,
+        },
+        {
+          name: "amount",
+          data_type: "NUMERIC",
+          inferred_type: "decimal",
+          nullable: false,
+          order: 1,
+        },
+      ],
+    },
+  ],
+};
+
+const importedTableDataset = {
+  id: "dataset_table_1",
+  project_id: "prj_demo",
+  name: "Orders",
+  source_preview_id: "",
+  physical_table_name: "ds_table",
+  row_count: 2,
+  fields: [
+    {
+      name: "customer",
+      inferred_type: "text",
+      nullable: false,
+      order: 0,
+    },
+  ],
+};
+
+const importedSqlDataset = {
+  id: "dataset_sql_1",
+  project_id: "prj_demo",
+  name: "SQL Orders",
+  source_preview_id: "",
+  physical_table_name: "ds_sql",
+  row_count: 1,
+  fields: [
+    {
+      name: "region",
+      inferred_type: "text",
+      nullable: false,
+      order: 0,
+    },
+  ],
 };

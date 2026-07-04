@@ -12,21 +12,38 @@ from app.core.errors import AppError
 from app.data_sources.connectors import (
     ConnectionTestResult,
     ExternalDatabaseConnectionConfig,
+    ExternalQueryResult,
+    ExternalTable,
+    ExternalTableColumn,
     build_connect_args,
     build_sqlalchemy_url,
 )
 from app.data_sources.repository import DataSourceRepository
-from app.data_sources.schemas import ExternalDatabaseConnectionCreateRequest
+from app.data_sources.schemas import (
+    ExternalDatabaseConnectionCreateRequest,
+    ExternalSqlImportRequest,
+    ExternalTableImportRequest,
+)
 from app.data_sources.service import DataSourceService, decode_secret
+from app.datasets.repository import DatasetRepository
+from app.datasets.service import DatasetService
+from app.imports.schemas import ImportFieldPreview
+from app.models.audit import LineageEdge as LineageEdgeModel
 from app.models.audit import OperationLog as OperationLogModel
+from app.models.task import Task as TaskModel
 from app.projects.repository import ProjectRepository
 from app.projects.service import ProjectService
+from app.tasks.repository import TaskRepository
+from app.tasks.service import TaskService
 
 
 class FakeTester:
     def __init__(self, result: ConnectionTestResult | None = None) -> None:
         self.result = result or ConnectionTestResult(ok=True, message="fake read-only ok")
         self.configs: list[ExternalDatabaseConnectionConfig] = []
+        self.inspect_configs: list[ExternalDatabaseConnectionConfig] = []
+        self.table_reads: list[tuple[ExternalDatabaseConnectionConfig, str, str, int]] = []
+        self.sql_reads: list[tuple[ExternalDatabaseConnectionConfig, str, int]] = []
 
     def test_connection(
         self,
@@ -34,6 +51,87 @@ class FakeTester:
     ) -> ConnectionTestResult:
         self.configs.append(config)
         return self.result
+
+    def inspect_schema(self, config: ExternalDatabaseConnectionConfig) -> list[ExternalTable]:
+        self.inspect_configs.append(config)
+        return [
+            ExternalTable(
+                schema_name="public",
+                table_name="orders",
+                columns=[
+                    ExternalTableColumn(
+                        name="customer",
+                        data_type="TEXT",
+                        inferred_type="text",
+                        nullable=False,
+                        order=0,
+                    ),
+                    ExternalTableColumn(
+                        name="amount",
+                        data_type="NUMERIC",
+                        inferred_type="decimal",
+                        nullable=False,
+                        order=1,
+                    ),
+                ],
+            )
+        ]
+
+    def read_table(
+        self,
+        config: ExternalDatabaseConnectionConfig,
+        *,
+        schema_name: str,
+        table_name: str,
+        limit: int,
+    ) -> ExternalQueryResult:
+        self.table_reads.append((config, schema_name, table_name, limit))
+        return ExternalQueryResult(
+            fields=[
+                ImportFieldPreview(
+                    name="customer",
+                    inferred_type="text",
+                    nullable=False,
+                    order=0,
+                ),
+                ImportFieldPreview(
+                    name="amount",
+                    inferred_type="decimal",
+                    nullable=False,
+                    order=1,
+                ),
+            ],
+            rows=[
+                {"customer": "Ada", "amount": 19.5},
+                {"customer": "Lin", "amount": 42.0},
+            ],
+        )
+
+    def run_read_only_sql(
+        self,
+        config: ExternalDatabaseConnectionConfig,
+        *,
+        sql: str,
+        limit: int,
+    ) -> ExternalQueryResult:
+        self.sql_reads.append((config, sql, limit))
+        return ExternalQueryResult(
+            fields=[
+                ImportFieldPreview(
+                    name="region",
+                    inferred_type="text",
+                    nullable=False,
+                    order=0,
+                ),
+                ImportFieldPreview(
+                    name="total_amount",
+                    inferred_type="decimal",
+                    nullable=False,
+                    order=1,
+                ),
+            ],
+            rows=[{"region": "West", "total_amount": 61.5}],
+        )
 
 
 def login(client: TestClient) -> dict[str, str]:
@@ -138,6 +236,103 @@ def test_external_database_connection_api_create_list_and_test(client: TestClien
     assert test_payload["connection"]["last_error"] is None
     assert tester.configs[0].database_type == "postgresql"
     assert tester.configs[0].password == "secret-password"
+
+
+def test_external_database_api_discovers_schema_and_imports_datasets(
+    client: TestClient,
+) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+    tester = FakeTester()
+    create_response = client.post(
+        "/api/data-sources/external-databases",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "name": "Warehouse",
+            "database_type": "postgresql",
+            "host": "warehouse.local",
+            "database_name": "analytics",
+            "username": "readonly_user",
+            "password": "secret-password",
+        },
+    )
+    assert create_response.status_code == 201
+    connection_id = create_response.json()["id"]
+
+    def override_get_data_source_service():
+        session = next(client.app.dependency_overrides[get_db_session]())
+        try:
+            yield DataSourceService(
+                DataSourceRepository(session),
+                tester=tester,
+                audit=AuditService(AuditRepository(session), actor_id="usr_admin"),
+            )
+        finally:
+            session.close()
+
+    client.app.dependency_overrides[get_data_source_service] = override_get_data_source_service
+    schema_response = client.get(
+        f"/api/data-sources/external-databases/{connection_id}/schema",
+        headers=headers,
+    )
+    table_import_response = client.post(
+        f"/api/data-sources/external-databases/{connection_id}/import-table",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "dataset_name": "External Orders",
+            "schema_name": "public",
+            "table_name": "orders",
+            "limit": 100,
+        },
+    )
+    sql_import_response = client.post(
+        f"/api/data-sources/external-databases/{connection_id}/import-sql",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "dataset_name": "External SQL Orders",
+            "sql": "SELECT customer, amount FROM orders",
+            "limit": 100,
+        },
+    )
+    unsafe_sql_response = client.post(
+        f"/api/data-sources/external-databases/{connection_id}/import-sql",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "dataset_name": "Unsafe",
+            "sql": "DELETE FROM orders",
+            "limit": 100,
+        },
+    )
+    client.app.dependency_overrides.pop(get_data_source_service, None)
+
+    assert schema_response.status_code == 200
+    schema_payload = schema_response.json()
+    assert schema_payload["tables"][0]["schema_name"] == "public"
+    assert schema_payload["tables"][0]["columns"][0]["name"] == "customer"
+
+    assert table_import_response.status_code == 201
+    table_dataset = table_import_response.json()["dataset"]
+    assert table_dataset["name"] == "External Orders"
+    assert table_dataset["row_count"] == 2
+
+    assert sql_import_response.status_code == 201
+    sql_dataset = sql_import_response.json()["dataset"]
+    assert sql_dataset["name"] == "External SQL Orders"
+    assert sql_dataset["row_count"] == 1
+
+    preview_response = client.get(
+        f"/api/datasets/{table_dataset['id']}/preview",
+        headers=headers,
+        params={"page": 1, "page_size": 10},
+    )
+    assert preview_response.status_code == 200
+    assert preview_response.json()["rows"][0]["customer"] == "Ada"
+    assert unsafe_sql_response.status_code == 400
+    assert unsafe_sql_response.json()["error"]["code"] == "sql_not_read_only"
 
 
 def test_external_database_connections_are_project_scoped_and_read_only(
@@ -298,6 +493,137 @@ def test_data_source_service_records_failed_connection_test() -> None:
         assert exc.code == "external_connection_not_found"
     else:
         raise AssertionError("Expected missing connection to raise AppError")
+
+
+def test_data_source_service_discovers_schema_and_imports_external_table() -> None:
+    session = create_test_session()
+    project_id, actor_id = create_project_in_session(session)
+    tester = FakeTester()
+    audit = AuditService(AuditRepository(session), actor_id=actor_id)
+    service = DataSourceService(
+        DataSourceRepository(session),
+        tester=tester,
+        audit=audit,
+    )
+    datasets = DatasetService(
+        DatasetRepository(session),
+        audit=audit,
+        tasks=TaskService(TaskRepository(session), initiator_id=actor_id),
+    )
+    connection = service.create_connection(
+        ExternalDatabaseConnectionCreateRequest(
+            project_id=project_id,
+            name="Warehouse",
+            database_type="postgresql",
+            host="warehouse.local",
+            database_name="analytics",
+            username="readonly_user",
+            password="secret-password",
+        )
+    )
+
+    inspected_connection, tables = service.inspect_external_schema(connection.id)
+    result = service.import_external_table(
+        connection.id,
+        ExternalTableImportRequest(
+            project_id=project_id,
+            dataset_name="External Orders",
+            schema_name="public",
+            table_name="orders",
+            limit=500,
+        ),
+        datasets,
+    )
+
+    assert inspected_connection.id == connection.id
+    assert tables[0].table_name == "orders"
+    assert tester.inspect_configs[0].password == "secret-password"
+    assert tester.table_reads[0][1:] == ("public", "orders", 500)
+    assert result.source_type == "external_table"
+    assert result.dataset.name == "External Orders"
+    assert result.dataset.row_count == 2
+
+    dataset, rows = datasets.list_dataset_rows(result.dataset.id)
+    assert dataset.fields[0].name == "customer"
+    assert rows[0]["customer"] == "Ada"
+
+    tasks = list(session.scalars(select(TaskModel).order_by(TaskModel.created_at)))
+    assert any(
+        task.task_type == "external_table_import"
+        and task.status == "success"
+        and task.related_resource_id == result.dataset.id
+        for task in tasks
+    )
+    logs = list(session.scalars(select(OperationLogModel).order_by(OperationLogModel.created_at)))
+    assert {log.action for log in logs} >= {
+        "data_source.external_schema_inspected",
+        "data_source.external_table_imported",
+        "dataset.created",
+    }
+    lineage_edges = list(session.scalars(select(LineageEdgeModel)))
+    assert any(
+        edge.source_type == "external_database_table"
+        and edge.source_id == f"{connection.id}:public.orders"
+        and edge.target_id == result.dataset.id
+        for edge in lineage_edges
+    )
+
+
+def test_data_source_service_imports_external_read_only_sql() -> None:
+    session = create_test_session()
+    project_id, actor_id = create_project_in_session(session)
+    tester = FakeTester()
+    audit = AuditService(AuditRepository(session), actor_id=actor_id)
+    service = DataSourceService(
+        DataSourceRepository(session),
+        tester=tester,
+        audit=audit,
+    )
+    datasets = DatasetService(
+        DatasetRepository(session),
+        audit=audit,
+        tasks=TaskService(TaskRepository(session), initiator_id=actor_id),
+    )
+    connection = service.create_connection(
+        ExternalDatabaseConnectionCreateRequest(
+            project_id=project_id,
+            name="Warehouse",
+            database_type="mysql",
+            host="mysql.local",
+            database_name="analytics",
+            username="readonly_user",
+            password="secret-password",
+        )
+    )
+
+    result = service.import_external_sql(
+        connection.id,
+        ExternalSqlImportRequest(
+            project_id=project_id,
+            dataset_name="Regional Sales",
+            sql="SELECT region, SUM(amount) AS total_amount FROM orders GROUP BY region",
+            limit=100,
+        ),
+        datasets,
+    )
+
+    assert tester.sql_reads[0][1:] == (
+        "SELECT region, SUM(amount) AS total_amount FROM orders GROUP BY region",
+        100,
+    )
+    assert result.source_type == "external_sql"
+    assert result.dataset.name == "Regional Sales"
+    dataset, rows = datasets.list_dataset_rows(result.dataset.id)
+    assert dataset.row_count == 1
+    assert rows[0]["region"] == "West"
+
+    lineage_edges = list(session.scalars(select(LineageEdgeModel)))
+    assert any(
+        edge.source_type == "external_database_sql"
+        and edge.target_id == result.dataset.id
+        and edge.transform_type == "external_sql_import"
+        for edge in lineage_edges
+    )
 
 
 def test_external_database_connector_builds_urls_and_timeouts() -> None:

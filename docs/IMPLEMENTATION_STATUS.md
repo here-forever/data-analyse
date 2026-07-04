@@ -15,7 +15,7 @@ professional data analysis workspace
   -> later enterprise-grade data platform
 ```
 
-Current implementation has moved beyond pure planning. The repository now has backend, frontend, Docker, database model, collaboration, import preview, formal dataset materialization, cleaning, SQL data views, chart/dashboard, audit/lineage hooks, task center foundations, and the first external database connection MVP.
+Current implementation has moved beyond pure planning. The repository now has backend, frontend, Docker, database model, collaboration, import preview, formal dataset materialization, cleaning, SQL data views, chart/dashboard, audit/lineage hooks, task center foundations, and external database intake into formal datasets.
 
 ## Implemented Documentation
 
@@ -69,6 +69,10 @@ Current implementation has moved beyond pure planning. The repository now has ba
 - External database connection creation with first-stage read-only policy enforcement.
 - External database connection test API using SQLAlchemy adapters for PostgreSQL and MySQL.
 - External database connection responses intentionally omit stored passwords.
+- External PostgreSQL/MySQL schema and table discovery API.
+- External table import into formal PostgreSQL-backed datasets.
+- External custom read-only SQL import into formal PostgreSQL-backed datasets.
+- External database imports are connected to task center, operation logs, basic lineage, dataset preview, and dataset quality profiling.
 - Basic operation log and lineage records for implemented workflow actions.
 - Persisted dataset fields and physical table name mapping.
 
@@ -112,7 +116,7 @@ Initial core tables have been modeled and migrated:
 - Task center page with project filtering, status summary, workflow coverage, and recent task table.
 - Task center retry entry controlled by backend retry eligibility, with immediate list refresh and completion feedback.
 - Task center related-resource links for datasets, data views, charts, and dashboards, with target pages reading route query parameters for selection/highlighting.
-- Data source center external database panel for PostgreSQL/MySQL connection creation, saved connection listing, status display, connection error display, and manual connection testing.
+- Data source center external database panel for PostgreSQL/MySQL connection creation, saved connection listing, status display, connection error display, manual connection testing, schema discovery, external table import, and advanced read-only SQL import.
 - Placeholder pages remain only for features not yet implemented beyond the current data intake, dataset, cleaning, SQL, chart, dashboard, and task surfaces.
 - Frontend API client tests.
 
@@ -132,11 +136,11 @@ Initial core tables have been modeled and migrated:
 - Frontend is reachable at `http://127.0.0.1:5173`.
 - Backend health check is reachable at `http://127.0.0.1:8000/api/health`.
 - Alembic migration has been applied to Docker PostgreSQL.
-- Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, related-resource navigation, and external PostgreSQL/MySQL connection create/list/test flows were verified through tests or API flows.
-- Backend test suite passed locally: 50 tests.
+- Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, related-resource navigation, external PostgreSQL/MySQL connection create/list/test flows, schema discovery, external table import, and external read-only SQL import were verified through tests or API flows.
+- Backend test suite passed locally: 53 tests.
 - Frontend test suite passed: 26 tests.
 - Frontend lint passed.
-- Frontend build previously passed and should be rerun after each UI milestone.
+- Frontend build passed, with only the existing ECharts chunk-size warning.
 
 ## Current Limitations
 
@@ -154,9 +158,11 @@ Initial core tables have been modeled and migrated:
 - Retry execution is synchronous inside the API request for selected safe operations; it is not yet backed by Redis/Celery/RQ or a distributed worker.
 - File preview parse failures are recorded against staged uploaded files; user-correctable validation failures remain non-retryable, while unexpected parse failures can keep retry metadata.
 - Authentication is still development-oriented and not production JWT/auth hardening.
-- External database connection MVP now stores PostgreSQL/MySQL connection metadata and test status, but it does not yet import external tables or custom external SQL results into formal datasets.
+- External database imports currently materialize bounded snapshots through row limits; scheduled sync, incremental sync, and streaming/large-table import are not implemented yet.
+- External table/SQL import retry metadata is recorded through task failure hooks, but the task retry executor does not yet replay external database imports.
 - External connection passwords are currently stored through a base64-encoded MVP placeholder. This is not production-grade encryption; before open-source production use or team deployment, replace it with encrypted secret storage backed by a configured key or a proper secret manager.
 - External connection testing validates basic connectivity through the configured adapter and product-level read-only policy, but it does not yet prove the external database user lacks write privileges.
+- External custom SQL import uses the shared read-only SQL validator, but it is still not a full SQL firewall or database privilege audit.
 - API data sources are still reserved for later milestones.
 - Scheduled sync and distributed worker execution are not implemented yet.
 
@@ -173,10 +179,10 @@ Future work must preserve these boundaries:
 
 ## Recommended Next Build Step
 
-The next implementation step should continue the data access path by turning external database connections into importable sources:
+The next implementation step should strengthen external intake reliability and usability:
 
-1. Add external database schema/table discovery for saved PostgreSQL/MySQL connections.
-2. Add external table import and custom read-only SQL import into formal PostgreSQL-backed datasets.
-3. Connect those imports to task center, operation logs, lineage, and dataset quality profiling.
+1. Add external import history/detail views and task retry replay for external table/SQL imports.
+2. Add richer preview-before-import for external tables and SQL results, including editable field names/types before materialization.
+3. Add encrypted secret storage before open-source production deployment.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

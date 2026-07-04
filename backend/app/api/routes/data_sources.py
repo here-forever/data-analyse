@@ -14,11 +14,20 @@ from app.data_sources.schemas import (
     ExternalDatabaseConnectionListResponse,
     ExternalDatabaseConnectionResponse,
     ExternalDatabaseConnectionTestResponse,
+    ExternalDatabaseSchemaResponse,
+    ExternalDatasetImportResponse,
+    ExternalSqlImportRequest,
+    ExternalTableImportRequest,
 )
 from app.data_sources.service import (
     DataSourceService,
+    external_table_to_response,
     to_external_database_connection_response,
 )
+from app.datasets.repository import DatasetRepository
+from app.datasets.service import DatasetService
+from app.tasks.repository import TaskRepository
+from app.tasks.service import TaskService
 
 router = APIRouter(prefix="/data-sources", tags=["data-sources"])
 
@@ -31,6 +40,15 @@ def get_data_source_service(
         DataSourceRepository(session),
         audit=AuditService(AuditRepository(session), actor_id=current_user.id),
     )
+
+
+def get_dataset_service(
+    session: Annotated[Session, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> DatasetService:
+    audit = AuditService(AuditRepository(session), actor_id=current_user.id)
+    tasks = TaskService(TaskRepository(session), initiator_id=current_user.id)
+    return DatasetService(DatasetRepository(session), audit=audit, tasks=tasks)
 
 
 @router.post(
@@ -75,3 +93,46 @@ def test_external_database_connection(
         ok=result.ok,
         message=result.message,
     )
+
+
+@router.get(
+    "/external-databases/{connection_id}/schema",
+    response_model=ExternalDatabaseSchemaResponse,
+)
+def inspect_external_database_schema(
+    connection_id: str,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+) -> ExternalDatabaseSchemaResponse:
+    connection, tables = data_sources.inspect_external_schema(connection_id)
+    return ExternalDatabaseSchemaResponse(
+        connection=to_external_database_connection_response(connection),
+        tables=[external_table_to_response(table) for table in tables],
+    )
+
+
+@router.post(
+    "/external-databases/{connection_id}/import-table",
+    response_model=ExternalDatasetImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def import_external_database_table(
+    connection_id: str,
+    payload: ExternalTableImportRequest,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+    datasets: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> ExternalDatasetImportResponse:
+    return data_sources.import_external_table(connection_id, payload, datasets)
+
+
+@router.post(
+    "/external-databases/{connection_id}/import-sql",
+    response_model=ExternalDatasetImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def import_external_database_sql(
+    connection_id: str,
+    payload: ExternalSqlImportRequest,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+    datasets: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> ExternalDatasetImportResponse:
+    return data_sources.import_external_sql(connection_id, payload, datasets)

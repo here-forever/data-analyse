@@ -23,12 +23,18 @@ import {
 } from "../imports/api";
 import {
   createExternalDatabaseConnection,
+  importExternalSql,
+  importExternalTable,
+  inspectExternalDatabaseSchema,
   listExternalDatabaseConnections,
   testExternalDatabaseConnection,
   type DatabaseType,
   type ExternalConnectionStatus,
+  type ExternalDatabaseSchemaResponse,
   type ExternalDatabaseConnection,
   type ExternalDatabaseConnectionCreatePayload,
+  type ExternalDatasetImportResponse,
+  type ExternalTable,
 } from "./api";
 
 const DEFAULT_PROJECT_ID = "prj_demo";
@@ -47,6 +53,17 @@ interface ExternalConnectionFormState {
   username: string;
 }
 
+interface TableImportFormState {
+  datasetName: string;
+  limit: string;
+}
+
+interface SqlImportFormState {
+  datasetName: string;
+  limit: string;
+  sql: string;
+}
+
 const DEFAULT_EXTERNAL_CONNECTION_FORM: ExternalConnectionFormState = {
   databaseName: "",
   databaseType: "postgresql",
@@ -55,6 +72,17 @@ const DEFAULT_EXTERNAL_CONNECTION_FORM: ExternalConnectionFormState = {
   password: "",
   port: DEFAULT_DATABASE_PORTS.postgresql,
   username: "",
+};
+
+const DEFAULT_TABLE_IMPORT_FORM: TableImportFormState = {
+  datasetName: "",
+  limit: "1000",
+};
+
+const DEFAULT_SQL_IMPORT_FORM: SqlImportFormState = {
+  datasetName: "",
+  limit: "1000",
+  sql: "SELECT * FROM orders",
 };
 
 export function DataSourcesPage() {
@@ -324,6 +352,16 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
   const [form, setForm] = useState<ExternalConnectionFormState>(
     DEFAULT_EXTERNAL_CONNECTION_FORM,
   );
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(
+    null,
+  );
+  const [selectedTableKey, setSelectedTableKey] = useState<string | null>(null);
+  const [tableImportForm, setTableImportForm] = useState<TableImportFormState>(
+    DEFAULT_TABLE_IMPORT_FORM,
+  );
+  const [sqlImportForm, setSqlImportForm] = useState<SqlImportFormState>(
+    DEFAULT_SQL_IMPORT_FORM,
+  );
 
   const connectionsQuery = useQuery({
     queryKey: ["external-database-connections", projectId],
@@ -355,9 +393,63 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
     },
   });
 
+  const schemaQuery = useQuery({
+    queryKey: ["external-database-schema", activeConnectionId],
+    queryFn: () => inspectExternalDatabaseSchema(activeConnectionId ?? ""),
+    enabled: activeConnectionId !== null,
+  });
+
+  const importTableMutation = useMutation({
+    mutationFn: ({
+      connectionId,
+      table,
+    }: {
+      connectionId: string;
+      table: ExternalTable;
+    }) =>
+      importExternalTable(connectionId, {
+        dataset_name: tableImportForm.datasetName.trim(),
+        limit: Number(tableImportForm.limit),
+        project_id: projectId,
+        schema_name: table.schema_name,
+        table_name: table.table_name,
+      }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ["datasets", projectId] });
+      setTableImportForm({
+        datasetName: "",
+        limit: tableImportForm.limit,
+      });
+      return result;
+    },
+  });
+
+  const importSqlMutation = useMutation({
+    mutationFn: (connectionId: string) =>
+      importExternalSql(connectionId, {
+        dataset_name: sqlImportForm.datasetName.trim(),
+        limit: Number(sqlImportForm.limit),
+        project_id: projectId,
+        sql: sqlImportForm.sql,
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["datasets", projectId] });
+    },
+  });
+
   const connections = useMemo(
     () => connectionsQuery.data?.items ?? [],
     [connectionsQuery.data?.items],
+  );
+  const activeConnection = connections.find(
+    (connection) => connection.id === activeConnectionId,
+  );
+  const selectedTable = useMemo(
+    () =>
+      schemaQuery.data?.tables.find(
+        (table) => externalTableKey(table) === selectedTableKey,
+      ) ?? null,
+    [schemaQuery.data?.tables, selectedTableKey],
   );
   const portNumber = Number(form.port);
   const isValidPort =
@@ -385,6 +477,25 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
       databaseType,
       port: DEFAULT_DATABASE_PORTS[databaseType],
     }));
+  }
+
+  function inspectConnection(connectionId: string) {
+    setActiveConnectionId(connectionId);
+    setSelectedTableKey(null);
+    setTableImportForm(DEFAULT_TABLE_IMPORT_FORM);
+    importTableMutation.reset();
+    importSqlMutation.reset();
+  }
+
+  function selectTable(table: ExternalTable) {
+    setSelectedTableKey(externalTableKey(table));
+    setTableImportForm((current) => ({
+      ...current,
+      datasetName:
+        current.datasetName ||
+        cleanDatasetNameFromExternalTable(table.table_name),
+    }));
+    importTableMutation.reset();
   }
 
   function submitConnection(event: React.FormEvent<HTMLFormElement>) {
@@ -534,8 +645,31 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
             testMutation.isPending ? testMutation.variables : undefined
           }
           onTest={(connectionId) => testMutation.mutate(connectionId)}
+          onInspect={inspectConnection}
         />
       </div>
+      <ExternalImportWorkspace
+        activeConnection={activeConnection ?? null}
+        importSqlError={importSqlMutation.error}
+        importSqlResult={importSqlMutation.data}
+        importTableError={importTableMutation.error}
+        importTableResult={importTableMutation.data}
+        isImportingSql={importSqlMutation.isPending}
+        isImportingTable={importTableMutation.isPending}
+        isLoadingSchema={schemaQuery.isLoading || schemaQuery.isFetching}
+        schema={schemaQuery.data}
+        schemaError={schemaQuery.error}
+        selectedTable={selectedTable}
+        sqlImportForm={sqlImportForm}
+        tableImportForm={tableImportForm}
+        onImportSql={(connectionId) => importSqlMutation.mutate(connectionId)}
+        onImportTable={(connectionId, table) =>
+          importTableMutation.mutate({ connectionId, table })
+        }
+        onSelectTable={selectTable}
+        onUpdateSqlImportForm={setSqlImportForm}
+        onUpdateTableImportForm={setTableImportForm}
+      />
     </div>
   );
 }
@@ -548,6 +682,7 @@ function ExternalConnectionList({
   testResult,
   testError,
   onTest,
+  onInspect,
 }: {
   connections: ExternalDatabaseConnection[];
   isLoading: boolean;
@@ -556,6 +691,7 @@ function ExternalConnectionList({
   testResult?: { ok: boolean; message: string };
   testError: Error | null;
   onTest: (connectionId: string) => void;
+  onInspect: (connectionId: string) => void;
 }) {
   return (
     <div className="min-w-0 rounded-md border border-line bg-white">
@@ -627,6 +763,7 @@ function ExternalConnectionList({
                   key={connection.id}
                   connection={connection}
                   isTesting={testingConnectionId === connection.id}
+                  onInspect={onInspect}
                   onTest={onTest}
                 />
               ))}
@@ -641,10 +778,12 @@ function ExternalConnectionList({
 function ExternalConnectionRow({
   connection,
   isTesting,
+  onInspect,
   onTest,
 }: {
   connection: ExternalDatabaseConnection;
   isTesting: boolean;
+  onInspect: (connectionId: string) => void;
   onTest: (connectionId: string) => void;
 }) {
   return (
@@ -677,17 +816,298 @@ function ExternalConnectionRow({
         {formatDate(connection.updated_at)}
       </td>
       <td className="border-b border-line px-4 py-3">
-        <button
-          className="inline-flex h-8 items-center gap-2 rounded-md border border-emerald/30 bg-emerald/10 px-3 text-xs font-semibold text-emerald transition hover:bg-emerald/20 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={isTesting}
-          onClick={() => onTest(connection.id)}
-          type="button"
-        >
-          <RefreshCcw className="h-3.5 w-3.5" />
-          {isTesting ? "Testing" : "Test"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-emerald/30 bg-emerald/10 px-3 text-xs font-semibold text-emerald transition hover:bg-emerald/20 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isTesting}
+            onClick={() => onTest(connection.id)}
+            type="button"
+          >
+            <RefreshCcw className="h-3.5 w-3.5" />
+            {isTesting ? "Testing" : "Test"}
+          </button>
+          <button
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-brand/20 bg-blue-50 px-3 text-xs font-semibold text-brand transition hover:bg-blue-100"
+            onClick={() => onInspect(connection.id)}
+            type="button"
+          >
+            <Database className="h-3.5 w-3.5" />
+            Discover
+          </button>
+        </div>
       </td>
     </tr>
+  );
+}
+
+function ExternalImportWorkspace({
+  activeConnection,
+  schema,
+  isLoadingSchema,
+  schemaError,
+  selectedTable,
+  tableImportForm,
+  sqlImportForm,
+  importTableResult,
+  importSqlResult,
+  importTableError,
+  importSqlError,
+  isImportingTable,
+  isImportingSql,
+  onSelectTable,
+  onImportTable,
+  onImportSql,
+  onUpdateTableImportForm,
+  onUpdateSqlImportForm,
+}: {
+  activeConnection: ExternalDatabaseConnection | null;
+  schema?: ExternalDatabaseSchemaResponse;
+  isLoadingSchema: boolean;
+  schemaError: Error | null;
+  selectedTable: ExternalTable | null;
+  tableImportForm: TableImportFormState;
+  sqlImportForm: SqlImportFormState;
+  importTableResult?: ExternalDatasetImportResponse;
+  importSqlResult?: ExternalDatasetImportResponse;
+  importTableError: Error | null;
+  importSqlError: Error | null;
+  isImportingTable: boolean;
+  isImportingSql: boolean;
+  onSelectTable: (table: ExternalTable) => void;
+  onImportTable: (connectionId: string, table: ExternalTable) => void;
+  onImportSql: (connectionId: string) => void;
+  onUpdateTableImportForm: (form: TableImportFormState) => void;
+  onUpdateSqlImportForm: (form: SqlImportFormState) => void;
+}) {
+  const tableLimit = Number(tableImportForm.limit);
+  const sqlLimit = Number(sqlImportForm.limit);
+  const canImportTable =
+    activeConnection !== null &&
+    selectedTable !== null &&
+    tableImportForm.datasetName.trim().length > 0 &&
+    Number.isInteger(tableLimit) &&
+    tableLimit >= 1 &&
+    tableLimit <= 10000 &&
+    !isImportingTable;
+  const canImportSql =
+    activeConnection !== null &&
+    sqlImportForm.datasetName.trim().length > 0 &&
+    sqlImportForm.sql.trim().length > 0 &&
+    Number.isInteger(sqlLimit) &&
+    sqlLimit >= 1 &&
+    sqlLimit <= 10000 &&
+    !isImportingSql;
+
+  return (
+    <div className="border-t border-line bg-slate-50/70 p-4">
+      {!activeConnection ? (
+        <StateMessage title="Choose Discover on a saved connection to inspect external tables" />
+      ) : (
+        <div className="grid gap-4 2xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+          <div className="overflow-hidden rounded-md border border-line bg-white">
+            <div className="flex flex-col gap-2 border-b border-line px-4 py-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-ink">
+                  Schema discovery
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  {activeConnection.name} / {activeConnection.database_name}
+                </p>
+              </div>
+              <span className="w-fit rounded-full bg-emerald/10 px-2.5 py-1 text-xs font-semibold text-emerald">
+                {schema?.tables.length.toLocaleString() ?? "0"} tables
+              </span>
+            </div>
+
+            {isLoadingSchema ? (
+              <StateMessage title="Inspecting external schema" />
+            ) : schemaError ? (
+              <StateMessage title={schemaError.message} tone="error" />
+            ) : !schema || schema.tables.length === 0 ? (
+              <StateMessage title="No external tables discovered" />
+            ) : (
+              <div className="grid gap-3 p-4 lg:grid-cols-2">
+                {schema.tables.map((table) => {
+                  const isSelected =
+                    selectedTable !== null &&
+                    externalTableKey(selectedTable) === externalTableKey(table);
+
+                  return (
+                    <button
+                      key={externalTableKey(table)}
+                      className={[
+                        "rounded-md border p-4 text-left transition",
+                        isSelected
+                          ? "border-brand bg-blue-50"
+                          : "border-line bg-white hover:border-brand hover:bg-blue-50",
+                      ].join(" ")}
+                      onClick={() => onSelectTable(table)}
+                      type="button"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-ink">
+                            {qualifiedTableName(table)}
+                          </p>
+                          <p className="mt-1 text-xs text-muted">
+                            {table.columns.length.toLocaleString()} fields
+                          </p>
+                        </div>
+                        <span className="rounded bg-cyan/10 px-2 py-1 text-xs font-semibold text-cyan">
+                          table
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {table.columns.slice(0, 5).map((column) => (
+                          <span
+                            key={`${externalTableKey(table)}-${column.name}`}
+                            className="rounded-full border border-line bg-slate-50 px-2 py-1 text-[11px] text-muted"
+                          >
+                            {column.name}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-md border border-line bg-white p-4">
+              <p className="text-sm font-semibold text-ink">
+                Import selected table
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Materialize a snapshot into a formal PostgreSQL-backed dataset.
+              </p>
+              {selectedTable ? (
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-md border border-cyan/20 bg-cyan/10 px-3 py-2 text-xs text-cyan">
+                    {qualifiedTableName(selectedTable)} /{" "}
+                    {selectedTable.columns.length} fields
+                  </div>
+                  <TextInput
+                    id="external-table-dataset-name"
+                    label="Dataset name"
+                    placeholder="External Orders"
+                    value={tableImportForm.datasetName}
+                    onChange={(value) =>
+                      onUpdateTableImportForm({
+                        ...tableImportForm,
+                        datasetName: value,
+                      })
+                    }
+                  />
+                  <TextInput
+                    id="external-table-limit"
+                    label="Row limit"
+                    placeholder="1000"
+                    value={tableImportForm.limit}
+                    onChange={(value) =>
+                      onUpdateTableImportForm({
+                        ...tableImportForm,
+                        limit: value,
+                      })
+                    }
+                  />
+                  <button
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={!canImportTable}
+                    onClick={() => {
+                      if (activeConnection && selectedTable) {
+                        onImportTable(activeConnection.id, selectedTable);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <Database className="h-4 w-4" />
+                    {isImportingTable ? "Importing..." : "Import table"}
+                  </button>
+                  <ImportResultAlert result={importTableResult} />
+                  {importTableError ? (
+                    <Alert message={importTableError.message} tone="error" />
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted">
+                  Select a discovered table to configure dataset import.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-md border border-amber/20 bg-amber/10 p-4">
+              <p className="text-sm font-semibold text-ink">
+                Advanced SQL import
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Save a read-only query result as a formal dataset.
+              </p>
+              <div className="mt-4 space-y-3">
+                <TextInput
+                  id="external-sql-dataset-name"
+                  label="Dataset name"
+                  placeholder="Filtered Orders"
+                  value={sqlImportForm.datasetName}
+                  onChange={(value) =>
+                    onUpdateSqlImportForm({
+                      ...sqlImportForm,
+                      datasetName: value,
+                    })
+                  }
+                />
+                <TextInput
+                  id="external-sql-limit"
+                  label="Row limit"
+                  placeholder="1000"
+                  value={sqlImportForm.limit}
+                  onChange={(value) =>
+                    onUpdateSqlImportForm({
+                      ...sqlImportForm,
+                      limit: value,
+                    })
+                  }
+                />
+                <label className="block" htmlFor="external-sql-query">
+                  <span className="text-xs font-semibold uppercase text-muted">
+                    SQL
+                  </span>
+                  <textarea
+                    id="external-sql-query"
+                    className="mt-2 min-h-28 w-full rounded-md border border-line bg-white px-3 py-2 font-mono text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+                    value={sqlImportForm.sql}
+                    onChange={(event) =>
+                      onUpdateSqlImportForm({
+                        ...sqlImportForm,
+                        sql: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                <button
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-amber px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-yellow-600 disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={!canImportSql}
+                  onClick={() => {
+                    if (activeConnection) {
+                      onImportSql(activeConnection.id);
+                    }
+                  }}
+                  type="button"
+                >
+                  <Database className="h-4 w-4" />
+                  {isImportingSql ? "Importing..." : "Import SQL result"}
+                </button>
+                <ImportResultAlert result={importSqlResult} />
+                {importSqlError ? (
+                  <Alert message={importSqlError.message} tone="error" />
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -827,8 +1247,10 @@ function DatasetBridgePanel({
                 </span>
               </div>
               <p className="mt-3 text-xs text-muted">
-                {dataset.fields.length.toLocaleString()} fields from preview{" "}
-                {compactId(dataset.source_preview_id)}
+                {dataset.fields.length.toLocaleString()} fields /{" "}
+                {dataset.source_preview_id
+                  ? `preview ${compactId(dataset.source_preview_id)}`
+                  : "materialized source"}
               </p>
             </Link>
           ))}
@@ -968,6 +1390,30 @@ function Alert({
   );
 }
 
+function ImportResultAlert({
+  result,
+}: {
+  result?: ExternalDatasetImportResponse;
+}) {
+  if (!result) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-emerald/20 bg-white px-3 py-3 text-sm text-emerald">
+      <p>
+        Created {result.dataset.name} ({result.row_count.toLocaleString()} rows)
+      </p>
+      <Link
+        className="inline-flex h-8 items-center rounded-md border border-emerald/30 bg-emerald/10 px-3 text-xs font-semibold text-emerald transition hover:bg-emerald/20"
+        to={`/datasets?project_id=${encodeURIComponent(result.dataset.project_id)}&dataset_id=${encodeURIComponent(result.dataset.id)}`}
+      >
+        Open dataset
+      </Link>
+    </div>
+  );
+}
+
 function Metric({
   label,
   value,
@@ -1051,6 +1497,27 @@ function compactId(value: string) {
     return value;
   }
   return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
+function externalTableKey(table: ExternalTable) {
+  return `${table.schema_name || "-"}::${table.table_name}`;
+}
+
+function qualifiedTableName(table: ExternalTable) {
+  return table.schema_name
+    ? `${table.schema_name}.${table.table_name}`
+    : table.table_name;
+}
+
+function cleanDatasetNameFromExternalTable(tableName: string) {
+  return (
+    tableName
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (character) => character.toUpperCase()) ||
+    "External Dataset"
+  );
 }
 
 function formatDate(value: string) {

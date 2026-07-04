@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.datasets.schemas import DatasetResponse
+
 DatabaseType = Literal["postgresql", "mysql"]
 ConnectionStatus = Literal["untested", "available", "failed"]
 
@@ -43,3 +45,43 @@ class ExternalDatabaseConnectionTestResponse(BaseModel):
     connection: ExternalDatabaseConnectionResponse
     ok: bool
     message: str
+
+
+class ExternalTableColumnResponse(BaseModel):
+    name: str
+    data_type: str
+    inferred_type: str
+    nullable: bool
+    order: int
+
+
+class ExternalTableResponse(BaseModel):
+    schema_name: str
+    table_name: str
+    columns: list[ExternalTableColumnResponse]
+
+
+class ExternalDatabaseSchemaResponse(BaseModel):
+    connection: ExternalDatabaseConnectionResponse
+    tables: list[ExternalTableResponse]
+
+
+class ExternalTableImportRequest(BaseModel):
+    project_id: str
+    dataset_name: str = Field(min_length=1, max_length=120)
+    schema_name: str = ""
+    table_name: str = Field(min_length=1, max_length=255)
+    limit: int = Field(default=1000, ge=1, le=10000)
+
+
+class ExternalSqlImportRequest(BaseModel):
+    project_id: str
+    dataset_name: str = Field(min_length=1, max_length=120)
+    sql: str = Field(min_length=1)
+    limit: int = Field(default=1000, ge=1, le=10000)
+
+
+class ExternalDatasetImportResponse(BaseModel):
+    dataset: DatasetResponse
+    source_type: Literal["external_table", "external_sql"]
+    row_count: int

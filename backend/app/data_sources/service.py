@@ -5,17 +5,25 @@ from datetime import datetime
 from app.audit.service import AuditService
 from app.core.errors import AppError
 from app.core.ids import new_id
+from app.core.sql_safety import validate_read_only_sql
 from app.data_sources.connectors import (
     ConnectionTestResult,
     ExternalDatabaseConnectionConfig,
     ExternalDatabaseTester,
+    ExternalTable,
 )
 from app.data_sources.repository import DataSourceRepository
 from app.data_sources.schemas import (
     DatabaseType,
     ExternalDatabaseConnectionCreateRequest,
     ExternalDatabaseConnectionResponse,
+    ExternalDatasetImportResponse,
+    ExternalSqlImportRequest,
+    ExternalTableColumnResponse,
+    ExternalTableImportRequest,
+    ExternalTableResponse,
 )
+from app.datasets.service import DatasetService, dataset_to_response_shape
 from app.models.data_source import ExternalDatabaseConnection as ExternalDatabaseConnectionModel
 
 DEFAULT_PORTS: dict[DatabaseType, int] = {
@@ -158,16 +166,7 @@ class DataSourceService:
     ) -> tuple[ExternalDatabaseConnection, ConnectionTestResult]:
         connection = self.get_connection(connection_id)
         try:
-            result = self.tester.test_connection(
-                ExternalDatabaseConnectionConfig(
-                    database_type=connection.database_type,
-                    host=connection.host,
-                    port=connection.port,
-                    database_name=connection.database_name,
-                    username=connection.username,
-                    password=decode_secret(connection.password_secret),
-                )
-            )
+            result = self.tester.test_connection(connection_to_config(connection))
         except Exception as error:
             result = ConnectionTestResult(
                 ok=False,
@@ -177,6 +176,120 @@ class DataSourceService:
         updated = self._update_test_status(connection, result)
         self._record_test(updated, result)
         return updated, result
+
+    def inspect_external_schema(
+        self, connection_id: str
+    ) -> tuple[
+        ExternalDatabaseConnection,
+        list[ExternalTable],
+    ]:
+        connection = self.get_connection(connection_id)
+        tables = self.tester.inspect_schema(connection_to_config(connection))
+        self._record_schema_inspected(connection, tables)
+        return connection, tables
+
+    def import_external_table(
+        self,
+        connection_id: str,
+        payload: ExternalTableImportRequest,
+        datasets: DatasetService,
+    ) -> ExternalDatasetImportResponse:
+        connection = self._get_project_connection(
+            connection_id=connection_id,
+            project_id=payload.project_id,
+        )
+        source_result = self.tester.read_table(
+            connection_to_config(connection),
+            schema_name=payload.schema_name,
+            table_name=payload.table_name,
+            limit=payload.limit,
+        )
+        source_id = external_table_source_id(
+            connection_id=connection.id,
+            schema_name=payload.schema_name,
+            table_name=payload.table_name,
+        )
+        dataset = datasets.create_materialized_dataset_from_rows(
+            project_id=payload.project_id,
+            name=payload.dataset_name.strip(),
+            fields=source_result.fields,
+            rows=source_result.rows,
+            source_type="external_database_table",
+            source_id=source_id,
+            transform_type="external_table_import",
+            task_type="external_table_import",
+            retry_payload={
+                "operation": "external_table_import",
+                "connection_id": connection.id,
+                **payload.model_dump(),
+            },
+        )
+        self._record_dataset_imported(
+            connection=connection,
+            dataset_id=dataset.id,
+            source_type="external_table",
+            source_id=source_id,
+            row_count=dataset.row_count,
+            detail={
+                "schema_name": payload.schema_name,
+                "table_name": payload.table_name,
+                "limit": payload.limit,
+            },
+        )
+        return ExternalDatasetImportResponse(
+            dataset=dataset_to_response_shape(dataset),
+            source_type="external_table",
+            row_count=dataset.row_count,
+        )
+
+    def import_external_sql(
+        self,
+        connection_id: str,
+        payload: ExternalSqlImportRequest,
+        datasets: DatasetService,
+    ) -> ExternalDatasetImportResponse:
+        connection = self._get_project_connection(
+            connection_id=connection_id,
+            project_id=payload.project_id,
+        )
+        validate_read_only_sql(payload.sql)
+        source_result = self.tester.run_read_only_sql(
+            connection_to_config(connection),
+            sql=payload.sql,
+            limit=payload.limit,
+        )
+        source_id = external_sql_source_id(connection_id=connection.id, sql=payload.sql)
+        dataset = datasets.create_materialized_dataset_from_rows(
+            project_id=payload.project_id,
+            name=payload.dataset_name.strip(),
+            fields=source_result.fields,
+            rows=source_result.rows,
+            source_type="external_database_sql",
+            source_id=source_id,
+            transform_type="external_sql_import",
+            task_type="external_sql_import",
+            retry_payload={
+                "operation": "external_sql_import",
+                "connection_id": connection.id,
+                **payload.model_dump(),
+            },
+        )
+        self._record_dataset_imported(
+            connection=connection,
+            dataset_id=dataset.id,
+            source_type="external_sql",
+            source_id=source_id,
+            row_count=dataset.row_count,
+            detail={
+                "sql": payload.sql,
+                "limit": payload.limit,
+            },
+        )
+        return ExternalDatasetImportResponse(
+            dataset=dataset_to_response_shape(dataset),
+            source_type="external_sql",
+            row_count=dataset.row_count,
+        )
 
     def get_connection(self, connection_id: str) -> ExternalDatabaseConnection:
         if self.repository is not None:
@@ -191,6 +304,21 @@ class DataSourceService:
         if connection is None:
             raise AppError(
                 "External database connection not found", "external_connection_not_found", 404
+            )
+        return connection
+
+    def _get_project_connection(
+        self,
+        *,
+        connection_id: str,
+        project_id: str,
+    ) -> ExternalDatabaseConnection:
+        connection = self.get_connection(connection_id)
+        if connection.project_id != project_id:
+            raise AppError(
+                "External database connection does not belong to this project",
+                "external_connection_project_mismatch",
+                400,
             )
         return connection
 
@@ -269,6 +397,50 @@ class DataSourceService:
             },
         )
 
+    def _record_schema_inspected(
+        self,
+        connection: ExternalDatabaseConnection,
+        tables: list[ExternalTable],
+    ) -> None:
+        if self.audit is None:
+            return
+
+        self.audit.record_operation(
+            action="data_source.external_schema_inspected",
+            project_id=connection.project_id,
+            resource_type="external_database_connection",
+            resource_id=connection.id,
+            detail={
+                "table_count": len(tables),
+            },
+        )
+
+    def _record_dataset_imported(
+        self,
+        *,
+        connection: ExternalDatabaseConnection,
+        dataset_id: str,
+        source_type: str,
+        source_id: str,
+        row_count: int,
+        detail: dict[str, object],
+    ) -> None:
+        if self.audit is None:
+            return
+
+        self.audit.record_operation(
+            action=f"data_source.{source_type}_imported",
+            project_id=connection.project_id,
+            resource_type="dataset",
+            resource_id=dataset_id,
+            detail={
+                "connection_id": connection.id,
+                "source_id": source_id,
+                "row_count": row_count,
+                **detail,
+            },
+        )
+
 
 def model_to_connection(
     connection: ExternalDatabaseConnectionModel,
@@ -309,6 +481,51 @@ def to_external_database_connection_response(
         created_at=connection.created_at,
         updated_at=connection.updated_at,
     )
+
+
+def external_table_to_response(table: ExternalTable) -> ExternalTableResponse:
+    return ExternalTableResponse(
+        schema_name=table.schema_name,
+        table_name=table.table_name,
+        columns=[
+            ExternalTableColumnResponse(
+                name=column.name,
+                data_type=column.data_type,
+                inferred_type=column.inferred_type,
+                nullable=column.nullable,
+                order=column.order,
+            )
+            for column in table.columns
+        ],
+    )
+
+
+def connection_to_config(
+    connection: ExternalDatabaseConnection,
+) -> ExternalDatabaseConnectionConfig:
+    return ExternalDatabaseConnectionConfig(
+        database_type=connection.database_type,
+        host=connection.host,
+        port=connection.port,
+        database_name=connection.database_name,
+        username=connection.username,
+        password=decode_secret(connection.password_secret),
+    )
+
+
+def external_table_source_id(
+    *,
+    connection_id: str,
+    schema_name: str,
+    table_name: str,
+) -> str:
+    qualified_name = f"{schema_name}.{table_name}" if schema_name else table_name
+    return f"{connection_id}:{qualified_name}"
+
+
+def external_sql_source_id(*, connection_id: str, sql: str) -> str:
+    compact_sql = " ".join(sql.split())
+    return f"{connection_id}:{compact_sql[:96]}"
 
 
 def encode_secret(value: str) -> str:

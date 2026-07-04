@@ -330,6 +330,114 @@ class DatasetService:
         self._datasets[dataset.id] = dataset
         return dataset
 
+    def create_materialized_dataset_from_rows(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        fields: list[ImportFieldPreview],
+        rows: list[dict[str, object | None]],
+        source_type: str,
+        source_id: str,
+        transform_type: str,
+        task_type: str,
+        retry_payload: dict[str, object] | None = None,
+    ) -> Dataset:
+        try:
+            return self._create_materialized_dataset_from_rows(
+                project_id=project_id,
+                name=name,
+                fields=fields,
+                rows=rows,
+                source_type=source_type,
+                source_id=source_id,
+                transform_type=transform_type,
+                task_type=task_type,
+            )
+        except Exception as error:
+            self._record_dataset_failure(
+                project_id=project_id,
+                name=name,
+                task_type=task_type,
+                error=error,
+                related_resource_type=source_type,
+                related_resource_id=source_id,
+                retry_payload=retry_payload,
+            )
+            raise
+
+    def _create_materialized_dataset_from_rows(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        fields: list[ImportFieldPreview],
+        rows: list[dict[str, object | None]],
+        source_type: str,
+        source_id: str,
+        transform_type: str,
+        task_type: str,
+    ) -> Dataset:
+        self._validate_fields(fields)
+        self._validate_dataset_name_available(project_id=project_id, name=name)
+        dataset_id = new_id("dataset")
+        if self.repository is None:
+            dataset_id = f"dataset_{len(self._datasets) + 1}"
+        physical_table_name = build_physical_table_name(dataset_id)
+        dataset = Dataset(
+            id=dataset_id,
+            project_id=project_id,
+            name=name,
+            source_preview_id="",
+            physical_table_name=physical_table_name,
+            row_count=len(rows),
+            fields=fields,
+        )
+
+        if self.repository is not None:
+            self.repository.save_dataset(
+                dataset=DatasetModel(
+                    id=dataset.id,
+                    project_id=dataset.project_id,
+                    name=dataset.name,
+                    description=None,
+                    source_preview_id=None,
+                    row_count=dataset.row_count,
+                ),
+                fields=[
+                    DatasetFieldModel(
+                        id=new_id("field"),
+                        dataset_id=dataset.id,
+                        name=field.name,
+                        data_type=field.inferred_type,
+                        nullable=field.nullable,
+                        order=field.order,
+                        is_sensitive=False,
+                        masking_strategy=None,
+                    )
+                    for field in fields
+                ],
+                table_map=DatasetTableMapModel(
+                    id=new_id("dtm"),
+                    dataset_id=dataset.id,
+                    physical_table_name=dataset.physical_table_name,
+                ),
+                materialized_fields=fields,
+                materialized_rows=rows,
+            )
+            self._record_dataset_audit(dataset)
+            self._record_external_lineage(
+                source_type=source_type,
+                source_id=source_id,
+                target_dataset=dataset,
+                transform_type=transform_type,
+            )
+            self._record_dataset_task(dataset, task_type=task_type)
+            return dataset
+
+        self._datasets[dataset.id] = dataset
+        return dataset
+
     def _model_to_dataset(self, model: DatasetModel) -> Dataset:
         fields = [
             ImportFieldPreview(
@@ -500,6 +608,27 @@ class DatasetService:
             target_id=target_dataset.id,
             transform_type=transform_type,
             transform_id=transform_id,
+        )
+
+    def _record_external_lineage(
+        self,
+        *,
+        source_type: str,
+        source_id: str,
+        target_dataset: Dataset,
+        transform_type: str,
+    ) -> None:
+        if self.audit is None:
+            return
+
+        self.audit.record_lineage(
+            project_id=target_dataset.project_id,
+            source_type=source_type,
+            source_id=source_id,
+            target_type="dataset",
+            target_id=target_dataset.id,
+            transform_type=transform_type,
+            transform_id=target_dataset.id,
         )
 
     def _record_dataset_task(self, dataset: Dataset, *, task_type: str) -> None:
