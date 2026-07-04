@@ -18,6 +18,19 @@ The first stage should not become an overbuilt SaaS platform, and it should not 
 - Preserve the main data flow: data source -> dataset -> cleaning recipe or SQL -> data view -> chart -> dashboard/report.
 - Prioritize local development experience and Docker Compose deployment.
 - Avoid implementing enterprise-only features too early unless the architecture needs a placeholder for them.
+- Keep backend and frontend structure clearly layered as the system grows.
+- Preserve traceability for important data and user actions through durable source retention, operation logs, and lineage records.
+- Avoid data-loss-prone behavior: do not silently overwrite or hard-delete important user resources; prefer recoverable states and explicit logged operations.
+- Treat durable original file storage and formal dataset materialization as foundation capabilities for the first-stage product.
+
+## Layering Rules
+
+- Backend routes should stay thin and delegate workflow decisions to services.
+- Backend services should coordinate validation, domain workflow, task/log/lineage hooks, and repositories.
+- Backend repositories should isolate persistence details from service logic.
+- SQLAlchemy models should represent database structure and avoid workflow behavior.
+- Frontend app shell, API access, state stores, shared UI, and feature pages should remain separated.
+- New features should connect to the main data flow instead of becoming isolated demos.
 
 ## Confirmed Technical Direction
 

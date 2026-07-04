@@ -383,6 +383,49 @@ Backend modules should include:
 - Operation log module.
 - Data lineage module.
 
+## 13.1 Engineering Structure Constraints
+
+The project must keep a clear layered structure while it grows. New backend code should generally follow this direction:
+
+```text
+api route
+  -> application service
+  -> repository / infrastructure adapter
+  -> SQLAlchemy model / external dependency
+```
+
+Rules:
+
+- Routes should handle HTTP inputs, authentication dependencies, and response conversion only.
+- Services should own business workflow decisions, validation, task/log/lineage hooks, and cross-module orchestration.
+- Repositories should own persistence details and transaction boundaries where appropriate.
+- Models should describe database structure, not product workflow.
+- Shared low-level helpers should live under `core`, but domain behavior should stay inside domain modules.
+- Frontend should keep app shell, shared UI/design primitives, API clients, stores, and feature pages separated.
+- Do not put unrelated domain logic into a generic utility module just because it is reusable once.
+- When a feature touches multiple modules, keep the main product flow visible in code and tests.
+
+The project is allowed to be a modular monolith in the first stage, but it should avoid becoming a single tangled application layer.
+
+## 13.2 Traceability and Data Durability Constraints
+
+The system must be designed so that important data paths are traceable and user data is not easy to lose.
+
+Rules:
+
+- Keep original uploaded files in durable local storage or a future object storage adapter.
+- Keep parsed metadata in PostgreSQL so imports can be inspected and resumed.
+- Formal datasets should be backed by physical database tables, not only in-memory previews.
+- Important actions should create operation log records once the related module exists.
+- Data transformations should create lineage records from source resource to target resource.
+- Do not silently overwrite source files, datasets, views, charts, or reports.
+- Prefer archive/disable behavior for destructive product actions; hard deletion should be explicit and logged.
+- Use stable resource IDs in logs and lineage so reports can be traced back to source data.
+- Keep enough metadata to reprocess a dataset from its source file or external source when possible.
+- Tests for import, dataset creation, cleaning, SQL materialization, and report generation should include traceability expectations as those modules mature.
+
+This constraint should guide implementation order: durable source retention, dataset materialization, operation logs, and lineage hooks are foundation work, not optional polish.
+
 ## 14. Frontend Technical Direction
 
 Use React + TypeScript.
