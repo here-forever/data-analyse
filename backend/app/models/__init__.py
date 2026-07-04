@@ -1,4 +1,5 @@
 from app.models.audit import LineageEdge, OperationLog
+from app.models.cleaning import CleaningRecipe, CleaningStep
 from app.models.dataset import Dataset, DatasetField, DatasetTableMap
 from app.models.imports import FileImportPreview, UploadedFile
 from app.models.permission import ResourcePermission
@@ -10,6 +11,8 @@ __all__ = [
     "Dataset",
     "DatasetField",
     "DatasetTableMap",
+    "CleaningRecipe",
+    "CleaningStep",
     "FileImportPreview",
     "LineageEdge",
     "OperationLog",

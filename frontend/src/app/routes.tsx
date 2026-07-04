@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { CleaningWorkbenchPage } from "../features/cleaning/CleaningWorkbenchPage";
 import { DatasetPage } from "../features/datasets/DatasetPage";
 import { ImportWizardPage } from "../features/imports/ImportWizardPage";
 import { PlaceholderPage } from "./PlaceholderPage";
@@ -19,6 +20,7 @@ export const routePlaceholders: Record<string, ReactNode> = {
   ),
   "/import": <ImportWizardPage />,
   "/datasets": <DatasetPage />,
+  "/cleaning": <CleaningWorkbenchPage />,
   "/sql": (
     <PlaceholderPage
       title="SQL workspace"

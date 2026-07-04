@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BrushCleaning,
   Database,
   FileUp,
   Home,
@@ -21,6 +22,7 @@ export const navigationItems: NavigationItem[] = [
   { label: "Data Sources", path: "/data-sources", icon: Database },
   { label: "Import", path: "/import", icon: FileUp },
   { label: "Datasets", path: "/datasets", icon: ListChecks },
+  { label: "Cleaning", path: "/cleaning", icon: BrushCleaning },
   { label: "SQL Workspace", path: "/sql", icon: SquareTerminal },
   { label: "Charts", path: "/charts", icon: BarChart3 },
   { label: "Dashboards", path: "/dashboards", icon: LayoutDashboard },

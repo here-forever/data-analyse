@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth.service import auth_service
+from app.cleaning.service import cleaning_service
 from app.core.config import get_settings
 from app.core.database import Base, get_db_session, import_models
 from app.datasets.service import dataset_service
@@ -23,6 +24,7 @@ def reset_development_services() -> None:
     permission_service.reset()
     import_service.reset()
     dataset_service.reset()
+    cleaning_service.reset()
 
 
 @pytest.fixture
