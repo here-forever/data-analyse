@@ -22,6 +22,17 @@ import {
   type DataViewPreviewResponse,
   type DashboardDefinition,
 } from "./api";
+import { ChartPreview } from "./ChartPreview";
+import {
+  AGGREGATIONS,
+  CHART_TYPES,
+  createDefaultChartState,
+  isNumericField,
+  toChartConfigPayload,
+  type Aggregation,
+  type ChartBuilderState,
+  type ChartType,
+} from "./chartConfig";
 
 const DEFAULT_PROJECT_ID = "prj_demo";
 const PAGE_SIZE = 20;
@@ -44,6 +55,12 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
   const [layoutMode, setLayoutMode] = useState<"dashboard" | "report">(
     "dashboard",
   );
+  const [chartState, setChartState] = useState<ChartBuilderState>(() =>
+    createDefaultChartState(null),
+  );
+  const [chartStateDataViewId, setChartStateDataViewId] = useState<
+    string | null
+  >(null);
 
   const dataViewsQuery = useQuery({
     queryKey: ["data-views", submittedProjectId],
@@ -86,9 +103,11 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
   const selectedDataViewCharts = selectedDataView
     ? charts.filter((chart) => chart.data_view_id === selectedDataView.id)
     : [];
-  const defaultChartName = selectedDataView
-    ? `${selectedDataView.name} ${isCharts ? "Chart" : "Visual"}`
-    : "Data view chart";
+  const previewRows = previewQuery.data?.rows ?? [];
+  const effectiveChartState =
+    selectedDataView && chartStateDataViewId !== selectedDataView.id
+      ? createDefaultChartState(selectedDataView)
+      : chartState;
 
   const createChartMutation = useMutation({
     mutationFn: () => {
@@ -96,20 +115,16 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
         throw new Error("Select a data view before creating a chart.");
       }
 
-      const dimension = pickDimensionField(selectedDataView);
-      const metric = pickMetricField(selectedDataView);
-
       return createChart({
         project_id: submittedProjectId,
         data_view_id: selectedDataView.id,
-        name: defaultChartName,
-        chart_type: metric ? "bar" : "table",
-        config: {
-          dimension,
-          metric,
-          data_view_name: selectedDataView.name,
-          preview_rows: previewQuery.data?.rows.slice(0, 12) ?? [],
-        },
+        name: effectiveChartState.name.trim(),
+        chart_type: effectiveChartState.chartType,
+        config: toChartConfigPayload(
+          effectiveChartState,
+          selectedDataView,
+          previewRows,
+        ),
       });
     },
     onSuccess: () => {
@@ -159,6 +174,16 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
     event.preventDefault();
     setSubmittedProjectId(projectId.trim());
     setSelectedDataViewId(null);
+    setChartState(createDefaultChartState(null));
+    setChartStateDataViewId(null);
+    createChartMutation.reset();
+    createDashboardMutation.reset();
+  }
+
+  function selectDataView(dataView: DataView) {
+    setSelectedDataViewId(dataView.id);
+    setChartState(createDefaultChartState(dataView));
+    setChartStateDataViewId(dataView.id);
     createChartMutation.reset();
     createDashboardMutation.reset();
   }
@@ -222,7 +247,7 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
                     key={dataView.id}
                     dataView={dataView}
                     isActive={dataView.id === selectedDataView?.id}
-                    onSelect={() => setSelectedDataViewId(dataView.id)}
+                    onSelect={() => selectDataView(dataView)}
                   />
                 ))}
               </div>
@@ -239,9 +264,16 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
               isLoading={chartsQuery.isLoading}
               error={chartsQuery.error}
               selectedDataView={selectedDataView}
+              previewRows={previewRows}
+              chartState={effectiveChartState}
               createdChart={createChartMutation.data}
               createError={createChartMutation.error}
               isCreating={createChartMutation.isPending}
+              onChartStateChange={(nextState) => {
+                setChartState(nextState);
+                setChartStateDataViewId(selectedDataView?.id ?? null);
+                createChartMutation.reset();
+              }}
               onCreate={() => createChartMutation.mutate()}
             />
           ) : (
@@ -280,9 +312,12 @@ function ChartResourcePanel({
   isLoading,
   error,
   selectedDataView,
+  previewRows,
+  chartState,
   createdChart,
   createError,
   isCreating,
+  onChartStateChange,
   onCreate,
 }: {
   charts: ChartDefinition[];
@@ -290,40 +325,159 @@ function ChartResourcePanel({
   isLoading: boolean;
   error: Error | null;
   selectedDataView: DataView | null;
+  previewRows: Array<Record<string, string | number | boolean | null>>;
+  chartState: ChartBuilderState;
   createdChart?: ChartDefinition;
   createError: Error | null;
   isCreating: boolean;
+  onChartStateChange: (nextState: ChartBuilderState) => void;
   onCreate: () => void;
 }) {
+  const fields = selectedDataView?.fields ?? [];
+  const numericFields = fields.filter((field) =>
+    isNumericField(field.inferred_type),
+  );
+  const metricOptions =
+    chartState.aggregation === "count" ? fields : numericFields;
+  const canSave =
+    Boolean(selectedDataView) &&
+    chartState.name.trim().length > 0 &&
+    chartState.dimension.length > 0 &&
+    (chartState.aggregation === "count" || chartState.metric.length > 0);
+
   return (
     <div className="rounded-md border border-line bg-panel shadow-panel">
       <PanelHeader
         icon={<BarChart3 className="h-4 w-4 text-brand" />}
-        title="Chart definitions"
+        title="Chart builder"
       />
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-        <ResourceList
-          emptyTitle={isLoading ? "Loading charts" : "No charts yet"}
-          error={error}
-          items={charts.length > 0 ? charts : allCharts}
-          renderItem={(chart) => (
-            <ResourceTile
-              key={chart.id}
-              title={chart.name}
-              meta={`${chart.chart_type} - ${chart.data_view_id}`}
+      <div className="grid gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-4">
+          <ChartPreview rows={previewRows} state={chartState} />
+          <ResourceList
+            emptyTitle={isLoading ? "Loading charts" : "No charts saved yet"}
+            error={error}
+            items={charts.length > 0 ? charts : allCharts}
+            renderItem={(chart) => (
+              <ResourceTile
+                key={chart.id}
+                title={chart.name}
+                meta={`${chart.chart_type} - ${chart.data_view_id}`}
+              />
+            )}
+          />
+        </div>
+        <div className="space-y-3 rounded-md border border-brand/20 bg-blue-50 p-3">
+          <label className="block">
+            <span className="text-xs font-semibold uppercase text-brand">
+              Chart name
+            </span>
+            <input
+              aria-label="Chart name"
+              className="mt-2 h-10 w-full rounded-md border border-brand/20 bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+              value={chartState.name}
+              onChange={(event) =>
+                onChartStateChange({ ...chartState, name: event.target.value })
+              }
             />
-          )}
-        />
-        <div className="rounded-md border border-brand/20 bg-blue-50 p-3">
-          <p className="text-xs font-semibold uppercase text-brand">
-            Create from source
-          </p>
-          <p className="mt-2 truncate text-sm font-semibold text-ink">
-            {selectedDataView?.name ?? "No data view selected"}
-          </p>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase text-brand">
+              Chart type
+            </span>
+            <select
+              aria-label="Chart type"
+              className="mt-2 h-10 w-full rounded-md border border-brand/20 bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+              value={chartState.chartType}
+              onChange={(event) =>
+                onChartStateChange({
+                  ...chartState,
+                  chartType: event.target.value as ChartType,
+                })
+              }
+            >
+              {CHART_TYPES.map((chartType) => (
+                <option key={chartType} value={chartType}>
+                  {chartType}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase text-brand">
+              Dimension
+            </span>
+            <select
+              aria-label="Dimension"
+              className="mt-2 h-10 w-full rounded-md border border-brand/20 bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+              value={chartState.dimension}
+              onChange={(event) =>
+                onChartStateChange({
+                  ...chartState,
+                  dimension: event.target.value,
+                })
+              }
+            >
+              {fields.map((field) => (
+                <option key={field.name} value={field.name}>
+                  {field.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase text-brand">
+              Metric
+            </span>
+            <select
+              aria-label="Metric"
+              className="mt-2 h-10 w-full rounded-md border border-brand/20 bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-muted"
+              disabled={chartState.aggregation === "count"}
+              value={chartState.metric}
+              onChange={(event) =>
+                onChartStateChange({
+                  ...chartState,
+                  metric: event.target.value,
+                })
+              }
+            >
+              {metricOptions.map((field) => (
+                <option key={field.name} value={field.name}>
+                  {field.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-semibold uppercase text-brand">
+              Aggregation
+            </span>
+            <select
+              aria-label="Aggregation"
+              className="mt-2 h-10 w-full rounded-md border border-brand/20 bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+              value={chartState.aggregation}
+              onChange={(event) =>
+                onChartStateChange({
+                  ...chartState,
+                  aggregation: event.target.value as Aggregation,
+                })
+              }
+            >
+              {AGGREGATIONS.map((aggregation) => (
+                <option key={aggregation} value={aggregation}>
+                  {aggregation}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <button
-            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
-            disabled={!selectedDataView || isCreating}
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!canSave || isCreating}
             onClick={onCreate}
             type="button"
           >
@@ -669,20 +823,4 @@ function formatCell(value: string | number | boolean | null | undefined) {
     return value ? "true" : "false";
   }
   return String(value);
-}
-
-function pickDimensionField(dataView: DataView): string | null {
-  return (
-    dataView.fields.find((field) => field.inferred_type === "text")?.name ??
-    dataView.fields[0]?.name ??
-    null
-  );
-}
-
-function pickMetricField(dataView: DataView): string | null {
-  return (
-    dataView.fields.find((field) =>
-      ["decimal", "integer"].includes(field.inferred_type),
-    )?.name ?? null
-  );
 }

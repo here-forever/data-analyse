@@ -94,15 +94,22 @@ describe("DataViewSourcePage", () => {
 
         if (url.endsWith("/charts")) {
           expect(init?.body).toContain('"data_view_id":"view_1"');
-          expect(init?.body).toContain('"chart_type":"bar"');
+          expect(init?.body).toContain('"chart_type":"line"');
+          expect(init?.body).toContain('"dimension":"customer"');
+          expect(init?.body).toContain('"metric":"amount"');
+          expect(init?.body).toContain('"aggregation":"avg"');
           return Promise.resolve(
             jsonResponse({
               id: "chart_1",
               project_id: "prj_demo",
               data_view_id: "view_1",
               name: "Orders View Chart",
-              chart_type: "bar",
-              config: { dimension: "customer", metric: "amount" },
+              chart_type: "line",
+              config: {
+                dimension: "customer",
+                metric: "amount",
+                aggregation: "avg",
+              },
             }),
           );
         }
@@ -120,6 +127,9 @@ describe("DataViewSourcePage", () => {
     expect(await screen.findByText("Ada")).toBeInTheDocument();
     expect(screen.getByText("19.5")).toBeInTheDocument();
     expect(screen.getByText(/configure chart type/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("Chart preview")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Chart type"), "line");
+    await user.selectOptions(screen.getByLabelText("Aggregation"), "avg");
     await user.click(screen.getByRole("button", { name: "Save chart" }));
     expect(
       await screen.findByText("Saved Orders View Chart"),
