@@ -1,0 +1,20 @@
+from pydantic import BaseModel, Field
+
+from app.imports.schemas import ImportFieldPreview
+
+
+class DatasetCreateRequest(BaseModel):
+    project_id: str
+    preview_id: str
+    name: str = Field(min_length=1, max_length=120)
+    fields: list[ImportFieldPreview] = Field(min_length=1)
+
+
+class DatasetResponse(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    source_preview_id: str
+    physical_table_name: str
+    row_count: int
+    fields: list[ImportFieldPreview]

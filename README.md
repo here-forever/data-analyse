@@ -100,3 +100,15 @@ The backend now includes a local-runnable API foundation for:
 - Basic resource-level permission records.
 
 This stage uses an in-memory development service so implementation can continue before Docker/PostgreSQL are available. The API boundary is covered by tests and will later be connected to SQLAlchemy models and migrations.
+
+## File Import Preview Foundation
+
+The backend now includes local-runnable endpoints for:
+
+- CSV upload preview.
+- Excel upload preview.
+- Field type inference.
+- Sample row preview.
+- Dataset metadata creation from a confirmed preview.
+
+This validates the first half of the import flow before formal PostgreSQL physical dataset table creation is added.

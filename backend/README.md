@@ -60,3 +60,12 @@ password: admin123
 ```
 
 These endpoints currently use an in-memory development service so they can run before Docker/PostgreSQL is installed. Persistent SQLAlchemy-backed storage will replace this service in a later database milestone.
+
+## File Import Preview API
+
+Current local development import endpoints include:
+
+- `POST /api/imports/file-previews`
+- `POST /api/datasets`
+
+The import preview endpoint supports CSV and Excel files, returns inferred fields, row count, and sample rows. Dataset creation currently records development metadata from a confirmed preview. Physical PostgreSQL dataset tables will be added when the database milestone is implemented.
