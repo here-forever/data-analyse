@@ -89,3 +89,14 @@ The frontend skeleton provides:
 - Vitest and Testing Library tests.
 
 Frontend commands are documented in `frontend/README.md`.
+
+## Auth, Projects, and Permissions API Foundation
+
+The backend now includes a local-runnable API foundation for:
+
+- Login and current user.
+- Project creation and project listing.
+- Project member roles.
+- Basic resource-level permission records.
+
+This stage uses an in-memory development service so implementation can continue before Docker/PostgreSQL are available. The API boundary is covered by tests and will later be connected to SQLAlchemy models and migrations.
