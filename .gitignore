@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+ENV/
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+coverage/
+.npm/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local data and generated runtime files
+storage/
+uploads/
+tmp/
+temp/
+*.sqlite
+*.sqlite3
+
+# Worktrees
+.worktrees/
+worktrees/
