@@ -17,7 +17,12 @@ export interface ApiClientOptions {
 }
 
 export interface ApiClient {
-  get<TResponse>(path: string, params?: Record<string, string | number | boolean | null | undefined>): Promise<TResponse>;
+  get<TResponse>(
+    path: string,
+    params?: Record<string, string | number | boolean | null | undefined>,
+  ): Promise<TResponse>;
+  post<TResponse>(path: string, body?: unknown): Promise<TResponse>;
+  postForm<TResponse>(path: string, body: FormData): Promise<TResponse>;
 }
 
 function joinUrl(
@@ -25,7 +30,9 @@ function joinUrl(
   path: string,
   params?: Record<string, string | number | boolean | null | undefined>,
 ): string {
-  const url = new URL(`${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`);
+  const url = new URL(
+    `${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`,
+  );
 
   Object.entries(params ?? {}).forEach(([key, value]) => {
     if (value !== null && value !== undefined) {
@@ -39,7 +46,9 @@ function joinUrl(
 async function readErrorMessage(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { error?: { message?: string } };
-    return payload.error?.message ?? `Request failed with status ${response.status}`;
+    return (
+      payload.error?.message ?? `Request failed with status ${response.status}`
+    );
   } catch {
     return `Request failed with status ${response.status}`;
   }
@@ -50,26 +59,60 @@ export function createApiClient({
   fetcher = fetch,
   accessToken,
 }: ApiClientOptions): ApiClient {
+  const jsonHeaders = {
+    Accept: "application/json",
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  };
+
   return {
     async get<TResponse>(
       path: string,
       params?: Record<string, string | number | boolean | null | undefined>,
     ): Promise<TResponse> {
       const response = await fetcher(joinUrl(baseUrl, path, params), {
-        headers: {
-          Accept: "application/json",
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
+        headers: jsonHeaders,
         method: "GET",
       });
 
-      if (!response.ok) {
-        throw new ApiError(await readErrorMessage(response), response.status);
-      }
+      return readJsonResponse<TResponse>(response);
+    },
 
-      return (await response.json()) as TResponse;
+    async post<TResponse>(path: string, body?: unknown): Promise<TResponse> {
+      const response = await fetcher(joinUrl(baseUrl, path), {
+        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: {
+          ...jsonHeaders,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+
+      return readJsonResponse<TResponse>(response);
+    },
+
+    async postForm<TResponse>(
+      path: string,
+      body: FormData,
+    ): Promise<TResponse> {
+      const response = await fetcher(joinUrl(baseUrl, path), {
+        body,
+        headers: jsonHeaders,
+        method: "POST",
+      });
+
+      return readJsonResponse<TResponse>(response);
     },
   };
+}
+
+async function readJsonResponse<TResponse>(
+  response: Response,
+): Promise<TResponse> {
+  if (!response.ok) {
+    throw new ApiError(await readErrorMessage(response), response.status);
+  }
+
+  return (await response.json()) as TResponse;
 }
 
 export const apiClient = createApiClient({

@@ -39,13 +39,16 @@ describe("apiClient", () => {
     });
     await client.get("/datasets");
 
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8000/api/datasets", {
-      headers: {
-        Accept: "application/json",
-        Authorization: "Bearer local-dev-token-usr_admin",
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/datasets",
+      {
+        headers: {
+          Accept: "application/json",
+          Authorization: "Bearer local-dev-token-usr_admin",
+        },
+        method: "GET",
       },
-      method: "GET",
-    });
+    );
   });
 
   test("appends query parameters to GET requests", async () => {
@@ -59,13 +62,65 @@ describe("apiClient", () => {
       fetcher: fetchMock,
     });
 
-    await client.get("/datasets", { project_id: "prj_1", page: 2, empty: null });
+    await client.get("/datasets", {
+      project_id: "prj_1",
+      page: 2,
+      empty: null,
+    });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:8000/api/datasets?project_id=prj_1&page=2",
       {
         headers: { Accept: "application/json" },
         method: "GET",
+      },
+    );
+  });
+
+  test("posts JSON body with authorization header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "dataset_1" }),
+    });
+    const client = createApiClient({
+      accessToken: "token",
+      baseUrl: "http://localhost/api",
+      fetcher: fetchMock,
+    });
+
+    await client.post("/datasets", { name: "Sales" });
+
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost/api/datasets", {
+      body: JSON.stringify({ name: "Sales" }),
+      headers: {
+        Accept: "application/json",
+        Authorization: "Bearer token",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  });
+
+  test("posts FormData without forcing content type", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "preview_1" }),
+    });
+    const client = createApiClient({
+      baseUrl: "http://localhost/api",
+      fetcher: fetchMock,
+    });
+    const body = new FormData();
+    body.set("project_id", "prj_1");
+
+    await client.postForm("/imports/file-previews", body);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost/api/imports/file-previews",
+      {
+        body,
+        headers: { Accept: "application/json" },
+        method: "POST",
       },
     );
   });
@@ -77,8 +132,13 @@ describe("apiClient", () => {
       json: async () => ({ error: { message: "Server failed" } }),
     });
 
-    const client = createApiClient({ baseUrl: "http://localhost/api", fetcher: fetchMock });
+    const client = createApiClient({
+      baseUrl: "http://localhost/api",
+      fetcher: fetchMock,
+    });
 
-    await expect(client.get("/broken")).rejects.toEqual(new ApiError("Server failed", 500));
+    await expect(client.get("/broken")).rejects.toEqual(
+      new ApiError("Server failed", 500),
+    );
   });
 });

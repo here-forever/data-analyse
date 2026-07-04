@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { DatasetPage } from "../features/datasets/DatasetPage";
+import { ImportWizardPage } from "../features/imports/ImportWizardPage";
 import { PlaceholderPage } from "./PlaceholderPage";
 
 export const routePlaceholders: Record<string, ReactNode> = {
@@ -16,12 +17,7 @@ export const routePlaceholders: Record<string, ReactNode> = {
       description="CSV, Excel, and future database/API connectors will be managed here."
     />
   ),
-  "/import": (
-    <PlaceholderPage
-      title="Import wizard"
-      description="Upload files, preview fields, confirm types, and create formal datasets."
-    />
-  ),
+  "/import": <ImportWizardPage />,
   "/datasets": <DatasetPage />,
   "/sql": (
     <PlaceholderPage
