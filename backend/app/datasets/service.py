@@ -5,7 +5,12 @@ from app.core.errors import AppError
 from app.core.ids import new_id
 from app.datasets.materializer import POSTGRES_IDENTIFIER_LIMIT, SYSTEM_ROW_ID
 from app.datasets.repository import DatasetRepository
-from app.datasets.schemas import DatasetCreateRequest
+from app.datasets.schemas import (
+    DatasetCreateRequest,
+    DatasetFieldQuality,
+    DatasetQualityResponse,
+    DatasetResponse,
+)
 from app.imports.parser import coerce_value
 from app.imports.schemas import ImportFieldPreview
 from app.imports.service import ImportService, import_service
@@ -95,6 +100,31 @@ class DatasetService:
         )
         return dataset, rows
 
+    def profile_dataset_quality(self, dataset_id: str) -> DatasetQualityResponse:
+        dataset, rows = self.list_dataset_rows(dataset_id)
+        field_profiles = [build_field_quality(field=field, rows=rows) for field in dataset.fields]
+        total_cells = dataset.row_count * len(dataset.fields)
+        null_cell_count = sum(profile.null_count for profile in field_profiles)
+        duplicate_row_count = count_duplicate_rows(
+            rows=drop_system_row_ids(rows),
+            field_names=[field.name for field in dataset.fields],
+        )
+        warnings = build_dataset_quality_warnings(
+            row_count=dataset.row_count,
+            field_profiles=field_profiles,
+            duplicate_row_count=duplicate_row_count,
+        )
+        return DatasetQualityResponse(
+            dataset=dataset_to_response_shape(dataset),
+            row_count=dataset.row_count,
+            field_count=len(dataset.fields),
+            null_cell_count=null_cell_count,
+            null_cell_ratio=ratio(null_cell_count, total_cells),
+            duplicate_row_count=duplicate_row_count,
+            field_profiles=field_profiles,
+            warnings=warnings,
+        )
+
     def list_dataset_rows(self, dataset_id: str) -> tuple[Dataset, list[dict[str, object | None]]]:
         dataset = self.get_dataset(dataset_id)
 
@@ -134,6 +164,7 @@ class DatasetService:
         preview = self.imports.get_preview(payload.preview_id)
         if preview is None or preview.project_id != payload.project_id:
             raise AppError(message="Preview not found", code="preview_not_found", status_code=404)
+        self._validate_dataset_name_available(project_id=payload.project_id, name=payload.name)
         self._validate_fields(payload.fields)
 
         dataset_id = new_id("dataset")
@@ -237,6 +268,7 @@ class DatasetService:
         lineage_transform_id: str,
     ) -> Dataset:
         self._validate_fields(fields)
+        self._validate_dataset_name_available(project_id=project_id, name=name)
         dataset_id = new_id("dataset")
         if self.repository is None:
             dataset_id = f"dataset_{len(self._datasets) + 1}"
@@ -362,6 +394,30 @@ class DatasetService:
                 message="Dataset field names must be unique",
                 code="duplicate_dataset_fields",
                 status_code=400,
+            )
+
+    def _validate_dataset_name_available(self, *, project_id: str, name: str) -> None:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise AppError("Dataset name cannot be empty", "invalid_dataset_name", 400)
+
+        if self.repository is None:
+            if any(
+                dataset.project_id == project_id and dataset.name == normalized_name
+                for dataset in self._datasets.values()
+            ):
+                raise AppError(
+                    "A dataset with this name already exists in the project",
+                    "dataset_name_conflict",
+                    409,
+                )
+            return
+
+        if self.repository.get_dataset_by_name(project_id=project_id, name=normalized_name):
+            raise AppError(
+                "A dataset with this name already exists in the project",
+                "dataset_name_conflict",
+                409,
             )
 
     def _build_materialized_rows(
@@ -500,3 +556,128 @@ def dataset_materialization_retry_payload(
         "name": payload.name,
         "fields": [field.model_dump() for field in payload.fields],
     }
+
+
+def dataset_to_response_shape(dataset: Dataset) -> DatasetResponse:
+    return DatasetResponse(
+        id=dataset.id,
+        project_id=dataset.project_id,
+        name=dataset.name,
+        source_preview_id=dataset.source_preview_id,
+        physical_table_name=dataset.physical_table_name,
+        row_count=dataset.row_count,
+        fields=dataset.fields,
+    )
+
+
+def build_field_quality(
+    *,
+    field: ImportFieldPreview,
+    rows: list[dict[str, object | None]],
+) -> DatasetFieldQuality:
+    values = [row.get(field.name) for row in rows]
+    null_count = sum(1 for value in values if value in (None, ""))
+    non_null_values = [value for value in values if value not in (None, "")]
+    distinct_values = {stable_quality_value(value) for value in non_null_values}
+    duplicate_count = max(0, len(non_null_values) - len(distinct_values))
+    warnings = build_field_quality_warnings(
+        field=field,
+        null_count=null_count,
+        row_count=len(rows),
+        distinct_count=len(distinct_values),
+    )
+    return DatasetFieldQuality(
+        name=field.name,
+        inferred_type=field.inferred_type,
+        nullable=field.nullable,
+        null_count=null_count,
+        null_ratio=ratio(null_count, len(rows)),
+        distinct_count=len(distinct_values),
+        duplicate_count=duplicate_count,
+        sample_values=sample_values(non_null_values),
+        warnings=warnings,
+    )
+
+
+def build_field_quality_warnings(
+    *,
+    field: ImportFieldPreview,
+    null_count: int,
+    row_count: int,
+    distinct_count: int,
+) -> list[str]:
+    warnings: list[str] = []
+    if row_count == 0:
+        warnings.append("empty_dataset")
+        return warnings
+    if null_count and not field.nullable:
+        warnings.append("unexpected_nulls")
+    if ratio(null_count, row_count) >= 0.5:
+        warnings.append("high_null_ratio")
+    if distinct_count == 1 and row_count > 1:
+        warnings.append("single_distinct_value")
+    return warnings
+
+
+def build_dataset_quality_warnings(
+    *,
+    row_count: int,
+    field_profiles: list[DatasetFieldQuality],
+    duplicate_row_count: int,
+) -> list[str]:
+    warnings: list[str] = []
+    if row_count == 0:
+        warnings.append("empty_dataset")
+    if duplicate_row_count:
+        warnings.append("duplicate_rows_detected")
+    if any(profile.null_ratio >= 0.5 for profile in field_profiles):
+        warnings.append("high_null_fields_detected")
+    return warnings
+
+
+def count_duplicate_rows(
+    *,
+    rows: list[dict[str, object | None]],
+    field_names: list[str],
+) -> int:
+    seen: set[tuple[object, ...]] = set()
+    duplicates = 0
+    for row in rows:
+        key = tuple(stable_quality_value(row.get(field_name)) for field_name in field_names)
+        if key in seen:
+            duplicates += 1
+            continue
+        seen.add(key)
+    return duplicates
+
+
+def drop_system_row_ids(
+    rows: list[dict[str, object | None]],
+) -> list[dict[str, object | None]]:
+    return [{key: value for key, value in row.items() if key != SYSTEM_ROW_ID} for row in rows]
+
+
+def sample_values(values: list[object | None], limit: int = 5) -> list[object]:
+    sampled: list[object] = []
+    seen: set[object] = set()
+    for value in values:
+        stable_value = stable_quality_value(value)
+        if stable_value in seen:
+            continue
+        seen.add(stable_value)
+        sampled.append(value)
+        if len(sampled) >= limit:
+            break
+    return sampled
+
+
+def stable_quality_value(value: object | None) -> object:
+    if isinstance(value, list | dict | set):
+        return str(value)
+    return value
+
+
+def ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(numerator / denominator, 4)

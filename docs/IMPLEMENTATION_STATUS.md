@@ -46,10 +46,13 @@ Current implementation has moved beyond pure planning. The repository now has ba
 - CSV and Excel parsing.
 - File import preview API.
 - Persisted uploaded-file metadata.
+- Staged uploaded-file storage before parsing, with upload status and parse error metadata.
 - Persisted import-preview metadata and sample rows.
 - Dataset metadata creation API.
+- Project-scoped duplicate dataset name protection.
 - Formal dataset materialization into physical database tables.
 - Dataset list, detail, and paged preview APIs.
+- Dataset quality profile API with null, distinct, duplicate, sample, and warning summaries.
 - Visual cleaning recipe creation, preview, and execution into derived datasets.
 - SQL workspace metadata, read-only query execution, and saved SQL results as reusable data views.
 - Data view creation, list, and paged preview APIs.
@@ -89,6 +92,8 @@ Initial core tables have been modeled and migrated:
 - Basic app shell and navigation.
 - Dataset workspace page with project dataset list, schema, and paged preview.
 - Import wizard page for CSV/Excel preview and dataset creation.
+- Import wizard upload status and failure recovery hints.
+- Dataset workspace quality overview for materialized datasets.
 - Cleaning workbench page for visual recipe preview, save, and execution.
 - SQL workspace page for project-scoped query execution and data view saving.
 - Chart configuration page with real Data View fields and ECharts rendering.
@@ -124,12 +129,15 @@ Initial core tables have been modeled and migrated:
 ## Current Limitations
 
 - Uploaded file bytes are saved in durable local storage, with metadata in PostgreSQL.
+- Uploads are staged before parsing, so failed parse attempts can be traced to an uploaded file record.
 - Import preview stores sample rows for confirmation before formal dataset creation.
 - Formal dataset creation creates and populates a physical table.
+- Dataset names are unique within a project to avoid accidental overwrite-like workflows.
+- Dataset quality profiling is computed on demand from materialized rows and is not yet cached or task-backed.
 - Operation logs and lineage records exist for the implemented workflow actions, but the lineage graph UI is not implemented yet.
 - Task center records synchronous workflow actions as completed or failed/retryable tasks.
 - Retry execution is synchronous inside the API request for selected safe operations; it is not yet backed by Redis/Celery/RQ or a distributed worker.
-- File preview parse failures are still not replayed by retry because failed uploads do not yet have a durable retry payload before parsing succeeds.
+- File preview parse failures are recorded against staged uploaded files; user-correctable validation failures remain non-retryable, while unexpected parse failures can keep retry metadata.
 - Authentication is still development-oriented and not production JWT/auth hardening.
 - External database import/connectors and API data sources are still reserved for later milestones.
 - Scheduled sync and distributed worker execution are not implemented yet.
@@ -149,8 +157,8 @@ Future work must preserve these boundaries:
 
 The next implementation step should continue strengthening the first-priority local file data access path:
 
-1. Improve local file import robustness around upload staging, duplicate dataset names, and clearer import failure recovery.
-2. Add richer dataset quality profiling after materialization.
+1. Add import history/list APIs so users can inspect successful and failed upload attempts directly.
+2. Add richer data quality drilldowns and optional quality profile caching for larger datasets.
 3. Then implement the external database read-only connector MVP.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

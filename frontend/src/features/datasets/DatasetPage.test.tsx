@@ -29,8 +29,18 @@ describe("DatasetPage", () => {
                 physical_table_name: "ds_sales",
                 row_count: 2,
                 fields: [
-                  { name: "order_id", inferred_type: "integer", nullable: false, order: 0 },
-                  { name: "amount", inferred_type: "decimal", nullable: false, order: 1 },
+                  {
+                    name: "order_id",
+                    inferred_type: "integer",
+                    nullable: false,
+                    order: 0,
+                  },
+                  {
+                    name: "amount",
+                    inferred_type: "decimal",
+                    nullable: false,
+                    order: 1,
+                  },
                 ],
               },
             ],
@@ -49,8 +59,18 @@ describe("DatasetPage", () => {
               physical_table_name: "ds_sales",
               row_count: 2,
               fields: [
-                { name: "order_id", inferred_type: "integer", nullable: false, order: 0 },
-                { name: "amount", inferred_type: "decimal", nullable: false, order: 1 },
+                {
+                  name: "order_id",
+                  inferred_type: "integer",
+                  nullable: false,
+                  order: 0,
+                },
+                {
+                  name: "amount",
+                  inferred_type: "decimal",
+                  nullable: false,
+                  order: 1,
+                },
               ],
             },
             page: 1,
@@ -64,6 +84,12 @@ describe("DatasetPage", () => {
         );
       }
 
+      if (url.includes("/datasets/dataset_1/quality")) {
+        return Promise.resolve(
+          jsonResponse(datasetQuality("dataset_1", "Sales Orders")),
+        );
+      }
+
       return Promise.resolve(jsonResponse({}));
     });
 
@@ -73,7 +99,10 @@ describe("DatasetPage", () => {
     expect(screen.getAllByText("ds_sales")).toHaveLength(2);
     expect(await screen.findByText("1001")).toBeInTheDocument();
     expect(screen.getByText("19.5")).toBeInTheDocument();
-    expect(screen.getByText("integer")).toBeInTheDocument();
+    expect(screen.getAllByText("integer").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Quality overview")).toBeInTheDocument();
+    expect(screen.getByText("No major warnings")).toBeInTheDocument();
+    expect(screen.getByText("Profiled fields")).toBeInTheDocument();
   });
 
   test("submits project id and requests datasets for that project", async () => {
@@ -110,7 +139,14 @@ describe("DatasetPage", () => {
                 source_preview_id: "preview_1",
                 physical_table_name: "ds_old",
                 row_count: 1,
-                fields: [{ name: "id", inferred_type: "integer", nullable: false, order: 0 }],
+                fields: [
+                  {
+                    name: "id",
+                    inferred_type: "integer",
+                    nullable: false,
+                    order: 0,
+                  },
+                ],
               },
               {
                 id: "dataset_2",
@@ -119,7 +155,14 @@ describe("DatasetPage", () => {
                 source_preview_id: "preview_2",
                 physical_table_name: "ds_imported",
                 row_count: 1,
-                fields: [{ name: "amount", inferred_type: "decimal", nullable: false, order: 0 }],
+                fields: [
+                  {
+                    name: "amount",
+                    inferred_type: "decimal",
+                    nullable: false,
+                    order: 0,
+                  },
+                ],
               },
             ],
           }),
@@ -136,13 +179,26 @@ describe("DatasetPage", () => {
               source_preview_id: "preview_2",
               physical_table_name: "ds_imported",
               row_count: 1,
-              fields: [{ name: "amount", inferred_type: "decimal", nullable: false, order: 0 }],
+              fields: [
+                {
+                  name: "amount",
+                  inferred_type: "decimal",
+                  nullable: false,
+                  order: 0,
+                },
+              ],
             },
             page: 1,
             page_size: 20,
             total_rows: 1,
             rows: [{ _das_row_id: 1, amount: 88.8 }],
           }),
+        );
+      }
+
+      if (url.includes("/datasets/dataset_2/quality")) {
+        return Promise.resolve(
+          jsonResponse(datasetQuality("dataset_2", "Imported Dataset")),
         );
       }
 
@@ -165,6 +221,10 @@ describe("DatasetPage", () => {
         "http://127.0.0.1:8000/api/datasets/dataset_2/preview?page=1&page_size=20",
         expect.any(Object),
       );
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/api/datasets/dataset_2/quality",
+        expect.any(Object),
+      );
     });
   });
 });
@@ -174,4 +234,56 @@ function jsonResponse(payload: unknown): Response {
     ok: true,
     json: async () => payload,
   } as Response;
+}
+
+function datasetQuality(datasetId: string, name: string) {
+  return {
+    dataset: {
+      id: datasetId,
+      project_id: "prj_demo",
+      name,
+      source_preview_id: "preview_1",
+      physical_table_name: "ds_sales",
+      row_count: 2,
+      fields: [
+        {
+          name: "order_id",
+          inferred_type: "integer",
+          nullable: false,
+          order: 0,
+        },
+        { name: "amount", inferred_type: "decimal", nullable: false, order: 1 },
+      ],
+    },
+    row_count: 2,
+    field_count: 2,
+    null_cell_count: 0,
+    null_cell_ratio: 0,
+    duplicate_row_count: 0,
+    warnings: [],
+    field_profiles: [
+      {
+        name: "order_id",
+        inferred_type: "integer",
+        nullable: false,
+        null_count: 0,
+        null_ratio: 0,
+        distinct_count: 2,
+        duplicate_count: 0,
+        sample_values: [1001, 1002],
+        warnings: [],
+      },
+      {
+        name: "amount",
+        inferred_type: "decimal",
+        nullable: false,
+        null_count: 0,
+        null_ratio: 0,
+        distinct_count: 2,
+        duplicate_count: 0,
+        sample_values: [19.5, 42],
+        warnings: [],
+      },
+    ],
+  };
 }

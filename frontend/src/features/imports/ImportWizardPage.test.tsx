@@ -24,6 +24,8 @@ describe("ImportWizardPage", () => {
             jsonResponse({
               id: "preview_1",
               project_id: "prj_demo",
+              uploaded_file_id: "file_1",
+              upload_status: "parsed",
               file_name: "sales.csv",
               file_type: "csv",
               row_count: 2,

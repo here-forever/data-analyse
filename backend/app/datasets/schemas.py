@@ -30,3 +30,26 @@ class DatasetPreviewResponse(BaseModel):
     page_size: int
     total_rows: int
     rows: list[dict[str, object | None]]
+
+
+class DatasetFieldQuality(BaseModel):
+    name: str
+    inferred_type: str
+    nullable: bool
+    null_count: int
+    null_ratio: float
+    distinct_count: int
+    duplicate_count: int
+    sample_values: list[object]
+    warnings: list[str]
+
+
+class DatasetQualityResponse(BaseModel):
+    dataset: DatasetResponse
+    row_count: int
+    field_count: int
+    null_cell_count: int
+    null_cell_ratio: float
+    duplicate_row_count: int
+    field_profiles: list[DatasetFieldQuality]
+    warnings: list[str]

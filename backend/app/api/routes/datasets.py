@@ -13,9 +13,10 @@ from app.datasets.schemas import (
     DatasetCreateRequest,
     DatasetListResponse,
     DatasetPreviewResponse,
+    DatasetQualityResponse,
     DatasetResponse,
 )
-from app.datasets.service import Dataset, DatasetService
+from app.datasets.service import Dataset, DatasetService, dataset_to_response_shape
 from app.imports.repository import ImportRepository
 from app.imports.service import ImportService
 from app.tasks.repository import TaskRepository
@@ -35,15 +36,7 @@ def get_dataset_service(
 
 
 def to_dataset_response(dataset: Dataset) -> DatasetResponse:
-    return DatasetResponse(
-        id=dataset.id,
-        project_id=dataset.project_id,
-        name=dataset.name,
-        source_preview_id=dataset.source_preview_id,
-        physical_table_name=dataset.physical_table_name,
-        row_count=dataset.row_count,
-        fields=dataset.fields,
-    )
+    return dataset_to_response_shape(dataset)
 
 
 @router.post("", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
@@ -92,3 +85,11 @@ def preview_dataset(
         total_rows=dataset.row_count,
         rows=rows,
     )
+
+
+@router.get("/{dataset_id}/quality", response_model=DatasetQualityResponse)
+def profile_dataset_quality(
+    dataset_id: str,
+    datasets: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> DatasetQualityResponse:
+    return datasets.profile_dataset_quality(dataset_id)

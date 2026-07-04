@@ -44,6 +44,14 @@ class DatasetRepository:
     def get_dataset(self, dataset_id: str) -> DatasetModel | None:
         return self.session.get(DatasetModel, dataset_id)
 
+    def get_dataset_by_name(self, *, project_id: str, name: str) -> DatasetModel | None:
+        return self.session.scalar(
+            select(DatasetModel).where(
+                DatasetModel.project_id == project_id,
+                DatasetModel.name == name,
+            )
+        )
+
     def list_datasets(self, project_id: str) -> list[DatasetModel]:
         return list(
             self.session.scalars(

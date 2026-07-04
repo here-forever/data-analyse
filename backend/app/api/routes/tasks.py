@@ -69,6 +69,7 @@ def get_task_retry_executor(
     )
     return TaskRetryExecutor(
         tasks=tasks,
+        imports=imports,
         datasets=datasets,
         cleaning=cleaning,
         sql_workspace=sql_workspace,

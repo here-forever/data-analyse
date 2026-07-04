@@ -7,7 +7,7 @@ from app.core.errors import AppError
 from app.core.ids import new_id
 from app.imports.parser import ParsedTabularFile, parse_tabular_file
 from app.imports.repository import ImportRepository
-from app.imports.schemas import ImportFieldPreview
+from app.imports.schemas import FilePreviewResponse, ImportFieldPreview
 from app.imports.storage import LocalFileStorage
 from app.models.imports import FileImportPreview as FileImportPreviewModel
 from app.models.imports import UploadedFile as UploadedFileModel
@@ -27,6 +27,7 @@ class FilePreview:
     sample_rows: list[dict[str, object | None]]
     uploaded_file_id: str | None = None
     storage_path: str | None = None
+    upload_status: str = "parsed"
 
 
 class ImportService:
@@ -62,12 +63,19 @@ class ImportService:
                 content=content,
             )
         except Exception as error:
-            self._record_preview_failure(
-                project_id=project_id,
-                file_name=file_name,
-                error=error,
-            )
-            raise
+            if self.repository is None:
+                self._record_preview_failure(
+                    project_id=project_id,
+                    file_name=file_name,
+                    error=error,
+                )
+            if isinstance(error, AppError):
+                raise
+            raise AppError(
+                "File could not be parsed. Check the file encoding or format and retry.",
+                "file_parse_failed",
+                400,
+            ) from error
 
     def _create_file_preview(
         self,
@@ -76,6 +84,18 @@ class ImportService:
         file_name: str,
         content: bytes,
     ) -> FilePreview:
+        if self.repository is not None:
+            uploaded_file = self._stage_uploaded_file(
+                project_id=project_id,
+                file_name=file_name,
+                content=content,
+            )
+            try:
+                return self._create_preview_from_uploaded_file(uploaded_file)
+            except Exception as error:
+                self._mark_uploaded_file_failed(uploaded_file, error)
+                raise
+
         parsed_file = parse_tabular_file(file_name, content)
         preview_id = (
             new_id("preview")
@@ -103,6 +123,7 @@ class ImportService:
             sample_rows=parsed_file.rows[:SAMPLE_ROW_LIMIT],
             uploaded_file_id=uploaded_file_id,
             storage_path=storage_path,
+            upload_status="parsed",
         )
 
         if self.repository is not None:
@@ -136,6 +157,96 @@ class ImportService:
 
         self._previews[preview.id] = preview
         return preview
+
+    def create_preview_from_uploaded_file(self, uploaded_file_id: str) -> FilePreview:
+        if self.repository is None:
+            raise AppError("Uploaded file storage is not configured", "upload_storage_missing", 500)
+
+        uploaded_file = self.repository.get_uploaded_file(uploaded_file_id)
+        if uploaded_file is None:
+            raise AppError("Uploaded file not found", "uploaded_file_not_found", 404)
+        try:
+            return self._create_preview_from_uploaded_file(uploaded_file)
+        except Exception as error:
+            self._mark_uploaded_file_failed(uploaded_file, error)
+            raise
+
+    def _stage_uploaded_file(
+        self,
+        *,
+        project_id: str,
+        file_name: str,
+        content: bytes,
+    ) -> UploadedFileModel:
+        uploaded_file_id = new_id("file")
+        storage_path = self._save_uploaded_file(
+            project_id=project_id,
+            uploaded_file_id=uploaded_file_id,
+            file_name=file_name,
+            content=content,
+        )
+        return self.repository.save_uploaded_file(
+            UploadedFileModel(
+                id=uploaded_file_id,
+                project_id=project_id,
+                uploader_id=self.uploader_id or "usr_unknown",
+                file_name=file_name,
+                file_type=file_type_from_name(file_name),
+                storage_path=storage_path,
+                size_bytes=len(content),
+                status="pending",
+                error_message=None,
+            )
+        )
+
+    def _create_preview_from_uploaded_file(
+        self,
+        uploaded_file: UploadedFileModel,
+    ) -> FilePreview:
+        storage_path = Path(uploaded_file.storage_path)
+        if not storage_path.exists():
+            raise AppError(
+                message="Uploaded source file not found in storage",
+                code="uploaded_source_file_missing",
+                status_code=409,
+            )
+
+        parsed_file = parse_tabular_file(uploaded_file.file_name, storage_path.read_bytes())
+        preview_id = new_id("preview")
+        preview = FilePreview(
+            id=preview_id,
+            project_id=uploaded_file.project_id,
+            file_name=uploaded_file.file_name,
+            file_type=parsed_file.file_type,
+            row_count=len(parsed_file.rows),
+            fields=parsed_file.fields,
+            sample_rows=parsed_file.rows[:SAMPLE_ROW_LIMIT],
+            uploaded_file_id=uploaded_file.id,
+            storage_path=uploaded_file.storage_path,
+            upload_status="parsed",
+        )
+        uploaded_file.file_type = parsed_file.file_type
+        uploaded_file.status = "parsed"
+        uploaded_file.error_message = None
+        saved_preview = self.repository.save_parsed_preview(
+            uploaded_file=uploaded_file,
+            preview=FileImportPreviewModel(
+                id=preview.id,
+                project_id=preview.project_id,
+                uploaded_file_id=uploaded_file.id,
+                file_name=preview.file_name,
+                file_type=preview.file_type,
+                row_count=preview.row_count,
+                fields=[field.model_dump() for field in preview.fields],
+                sample_rows=preview.sample_rows,
+            ),
+        )
+        self._record_preview_audit(
+            preview=preview,
+            uploaded_file_id=uploaded_file.id,
+        )
+        self._record_preview_task(preview)
+        return model_to_preview(saved_preview, upload_status="parsed")
 
     def get_preview(self, preview_id: str) -> FilePreview | None:
         if self.repository is not None:
@@ -258,8 +369,55 @@ class ImportService:
             related_resource_id=None,
         )
 
+    def _record_staged_preview_failure(
+        self,
+        *,
+        project_id: str,
+        file_name: str,
+        uploaded_file_id: str,
+        error: Exception,
+    ) -> None:
+        if self.tasks is None:
+            return
 
-def model_to_preview(preview: FileImportPreviewModel) -> FilePreview:
+        self.tasks.record_exception(
+            project_id=project_id,
+            name=f"Parse file preview failed: {file_name}",
+            task_type="file_preview_parse",
+            error=error,
+            related_resource_type="uploaded_file",
+            related_resource_id=uploaded_file_id,
+            retry_payload=(
+                None
+                if isinstance(error, AppError)
+                else {
+                    "operation": "file_preview_parse",
+                    "uploaded_file_id": uploaded_file_id,
+                }
+            ),
+        )
+
+    def _mark_uploaded_file_failed(
+        self,
+        uploaded_file: UploadedFileModel,
+        error: Exception,
+    ) -> None:
+        uploaded_file.status = "failed"
+        uploaded_file.error_message = str(error) or error.__class__.__name__
+        self.repository.update_uploaded_file(uploaded_file)
+        self._record_staged_preview_failure(
+            project_id=uploaded_file.project_id,
+            file_name=uploaded_file.file_name,
+            uploaded_file_id=uploaded_file.id,
+            error=error,
+        )
+
+
+def model_to_preview(
+    preview: FileImportPreviewModel,
+    *,
+    upload_status: str = "parsed",
+) -> FilePreview:
     return FilePreview(
         id=preview.id,
         project_id=preview.project_id,
@@ -270,7 +428,27 @@ def model_to_preview(preview: FileImportPreviewModel) -> FilePreview:
         sample_rows=preview.sample_rows,
         uploaded_file_id=preview.uploaded_file_id,
         storage_path=None,
+        upload_status=upload_status,
     )
+
+
+def to_file_preview_response(preview: FilePreview) -> FilePreviewResponse:
+    return FilePreviewResponse(
+        id=preview.id,
+        project_id=preview.project_id,
+        uploaded_file_id=preview.uploaded_file_id,
+        upload_status=preview.upload_status,
+        file_name=preview.file_name,
+        file_type=preview.file_type,
+        row_count=preview.row_count,
+        fields=preview.fields,
+        sample_rows=preview.sample_rows,
+    )
+
+
+def file_type_from_name(file_name: str) -> str:
+    suffix = Path(file_name).suffix.lower().removeprefix(".")
+    return suffix or "unknown"
 
 
 import_service = ImportService()

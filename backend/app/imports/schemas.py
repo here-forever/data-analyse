@@ -15,6 +15,8 @@ class ImportFieldPreview(BaseModel):
 class FilePreviewResponse(BaseModel):
     id: str
     project_id: str
+    uploaded_file_id: str | None
+    upload_status: str
     file_name: str
     file_type: str
     row_count: int

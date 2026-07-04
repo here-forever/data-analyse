@@ -7,6 +7,7 @@ from app.cleaning.service import CleaningService
 from app.core.errors import AppError
 from app.datasets.schemas import DatasetCreateRequest
 from app.datasets.service import DatasetService
+from app.imports.service import ImportService
 from app.sql_workspace.schemas import SqlSaveDataViewRequest
 from app.sql_workspace.service import SqlWorkspaceService
 from app.tasks.service import Task, TaskService
@@ -25,12 +26,14 @@ class TaskRetryExecutor:
         self,
         *,
         tasks: TaskService,
+        imports: ImportService,
         datasets: DatasetService,
         cleaning: CleaningService,
         sql_workspace: SqlWorkspaceService,
         visualizations: VisualizationService,
     ) -> None:
         self.tasks = tasks
+        self.imports = imports
         self.datasets = datasets
         self.cleaning = cleaning
         self.sql_workspace = sql_workspace
@@ -66,6 +69,11 @@ class TaskRetryExecutor:
             raise AppError("Retry payload operation is missing", "task_retry_payload_invalid", 400)
 
         try:
+            if operation == "file_preview_parse":
+                uploaded_file_id = require_string(payload, "uploaded_file_id")
+                preview = self.imports.create_preview_from_uploaded_file(uploaded_file_id)
+                return "file_import_preview", preview.id
+
             if operation == "dataset_materialization":
                 dataset = self.datasets.create_dataset(DatasetCreateRequest.model_validate(payload))
                 return "dataset", dataset.id

@@ -3,6 +3,7 @@ import {
   ArrowRight,
   CheckCircle2,
   FileSpreadsheet,
+  Info,
   RefreshCcw,
   UploadCloud,
 } from "lucide-react";
@@ -163,7 +164,7 @@ export function ImportWizardPage() {
               </button>
 
               {previewMutation.error ? (
-                <Alert tone="error" message={previewMutation.error.message} />
+                <ImportFailureHint message={previewMutation.error.message} />
               ) : null}
             </div>
           </Panel>
@@ -209,7 +210,9 @@ export function ImportWizardPage() {
                 </div>
               ) : null}
               {datasetMutation.error ? (
-                <Alert tone="error" message={datasetMutation.error.message} />
+                <DatasetCreateFailureHint
+                  message={datasetMutation.error.message}
+                />
               ) : null}
             </div>
           </Panel>
@@ -253,6 +256,21 @@ function PreviewSummary({ preview }: { preview: FilePreview | null }) {
         value={preview.fields.length.toLocaleString()}
         tone="amber"
       />
+      <div className="rounded-md border border-line bg-panel px-4 py-3 md:col-span-4">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald/20 bg-emerald/10 px-2.5 py-1 font-semibold text-emerald">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {preview.upload_status}
+          </span>
+          <span className="font-mono">
+            upload {preview.uploaded_file_id ?? "-"}
+          </span>
+          <span>
+            Original file is retained for reprocessing and dataset
+            materialization.
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -452,6 +470,43 @@ function Alert({
   return (
     <div className={`rounded-md border px-3 py-3 text-sm ${className}`}>
       {message}
+    </div>
+  );
+}
+
+function ImportFailureHint({ message }: { message: string }) {
+  return (
+    <div className="space-y-2 rounded-md border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+      <div className="flex items-start gap-2">
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+        <div>
+          <p className="font-semibold">{message}</p>
+          <p className="mt-1 text-xs leading-5">
+            The system keeps upload attempts traceable. Choose a CSV/XLSX file
+            with a header row, or open Task Center to inspect retry eligibility.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DatasetCreateFailureHint({ message }: { message: string }) {
+  const isNameConflict = /already exists|dataset with this name/i.test(message);
+  return (
+    <div className="space-y-2 rounded-md border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+      <p className="font-semibold">{message}</p>
+      {isNameConflict ? (
+        <p className="text-xs leading-5">
+          Use a unique dataset name for this project. Existing datasets are kept
+          immutable unless you explicitly create a new derived asset.
+        </p>
+      ) : (
+        <p className="text-xs leading-5">
+          The original file and preview metadata are retained, so you can adjust
+          fields or retry the materialization from Task Center when eligible.
+        </p>
+      )}
     </div>
   );
 }

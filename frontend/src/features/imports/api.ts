@@ -4,6 +4,8 @@ import type { Dataset, DatasetField } from "../datasets/api";
 export interface FilePreview {
   id: string;
   project_id: string;
+  uploaded_file_id: string | null;
+  upload_status: string;
   file_name: string;
   file_type: string;
   row_count: number;

@@ -261,6 +261,8 @@ def test_failed_task_without_retry_payload_cannot_request_retry(client: TestClie
     assert failed_task["task_type"] == "file_preview_parse"
     assert failed_task["status"] == "failed"
     assert failed_task["can_retry"] is False
+    assert failed_task["related_resource_type"] == "uploaded_file"
+    assert failed_task["related_resource_id"].startswith("file_")
     assert failed_task["error_message"] == "Only CSV and Excel files are supported"
 
     retry_response = client.post(

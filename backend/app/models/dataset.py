@@ -7,6 +7,7 @@ from app.models.mixins import TimestampMixin
 
 class Dataset(TimestampMixin, Base):
     __tablename__ = "datasets"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_datasets_project_name"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)

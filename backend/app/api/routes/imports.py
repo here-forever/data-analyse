@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.core.database import get_db_session
 from app.imports.repository import ImportRepository
 from app.imports.schemas import FilePreviewResponse
-from app.imports.service import FilePreview, ImportService
+from app.imports.service import ImportService, to_file_preview_response
 from app.imports.storage import LocalFileStorage
 from app.tasks.repository import TaskRepository
 from app.tasks.service import TaskService
@@ -30,18 +30,6 @@ def get_import_service(
         storage=LocalFileStorage(settings.upload_storage_root),
         audit=AuditService(AuditRepository(session), actor_id=current_user.id),
         tasks=TaskService(TaskRepository(session), initiator_id=current_user.id),
-    )
-
-
-def to_file_preview_response(preview: FilePreview) -> FilePreviewResponse:
-    return FilePreviewResponse(
-        id=preview.id,
-        project_id=preview.project_id,
-        file_name=preview.file_name,
-        file_type=preview.file_type,
-        row_count=preview.row_count,
-        fields=preview.fields,
-        sample_rows=preview.sample_rows,
     )
 
 

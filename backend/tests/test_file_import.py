@@ -47,6 +47,8 @@ def test_csv_upload_creates_preview_and_dataset(client: TestClient) -> None:
     assert upload_response.status_code == 201
     preview = upload_response.json()
     assert preview["file_name"] == "sales.csv"
+    assert preview["uploaded_file_id"].startswith("file_")
+    assert preview["upload_status"] == "parsed"
     assert preview["row_count"] == 2
     assert preview["fields"] == [
         {"name": "order_id", "inferred_type": "integer", "nullable": False, "order": 0},
@@ -126,6 +128,33 @@ def test_csv_upload_creates_preview_and_dataset(client: TestClient) -> None:
     assert invalid_page_size_response.status_code == 400
     assert invalid_page_size_response.json()["error"]["code"] == "invalid_page_size"
 
+    quality_response = client.get(
+        f"/api/datasets/{dataset['id']}/quality",
+        headers=headers,
+    )
+    assert quality_response.status_code == 200
+    quality = quality_response.json()
+    assert quality["row_count"] == 2
+    assert quality["field_count"] == 3
+    assert quality["null_cell_count"] == 0
+    assert quality["duplicate_row_count"] == 0
+    assert quality["field_profiles"][1]["name"] == "amount"
+    assert quality["field_profiles"][1]["distinct_count"] == 2
+    assert quality["field_profiles"][1]["sample_values"] == [19.5, 42.0]
+
+    duplicate_dataset_response = client.post(
+        "/api/datasets",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "preview_id": preview["id"],
+            "name": "Sales Orders",
+            "fields": preview["fields"],
+        },
+    )
+    assert duplicate_dataset_response.status_code == 409
+    assert duplicate_dataset_response.json()["error"]["code"] == "dataset_name_conflict"
+
 
 def test_excel_upload_creates_preview(client: TestClient) -> None:
     headers = login(client)
@@ -177,3 +206,13 @@ def test_unsupported_file_type_is_rejected(client: TestClient) -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "unsupported_file_type"
+
+    task_response = client.get(
+        "/api/tasks",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+    assert task_response.status_code == 200
+    failed_task = task_response.json()["items"][0]
+    assert failed_task["related_resource_id"].startswith("file_")
+    assert failed_task["can_retry"] is False
