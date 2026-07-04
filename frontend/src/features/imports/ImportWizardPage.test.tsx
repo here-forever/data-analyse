@@ -88,6 +88,38 @@ describe("ImportWizardPage", () => {
           );
         }
 
+        if (url.endsWith("/imports/file-previews/preview_1")) {
+          return Promise.resolve(
+            jsonResponse({
+              id: "preview_1",
+              project_id: "prj_demo",
+              uploaded_file_id: "file_1",
+              upload_status: "parsed",
+              file_name: "sales.csv",
+              file_type: "csv",
+              row_count: 2,
+              fields: [
+                {
+                  name: "order_id",
+                  inferred_type: "integer",
+                  nullable: false,
+                  order: 0,
+                },
+                {
+                  name: "amount",
+                  inferred_type: "decimal",
+                  nullable: false,
+                  order: 1,
+                },
+              ],
+              sample_rows: [
+                { order_id: 1, amount: 19.5 },
+                { order_id: 2, amount: 42 },
+              ],
+            }),
+          );
+        }
+
         if (url.endsWith("/datasets")) {
           expect(init?.body).toContain("sales_amount");
           return Promise.resolve(
@@ -137,6 +169,8 @@ describe("ImportWizardPage", () => {
     expect(
       screen.getByText("Only CSV and Excel files are supported"),
     ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open preview" }));
+    expect(await screen.findByDisplayValue("amount")).toBeInTheDocument();
 
     const amountInput = screen.getByDisplayValue("amount");
     await user.clear(amountInput);

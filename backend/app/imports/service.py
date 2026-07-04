@@ -272,6 +272,12 @@ class ImportService:
 
         return self._previews.get(preview_id)
 
+    def require_preview(self, preview_id: str) -> FilePreview:
+        preview = self.get_preview(preview_id)
+        if preview is None:
+            raise AppError(message="Preview not found", code="preview_not_found", status_code=404)
+        return preview
+
     def list_uploaded_files(self, project_id: str) -> list[UploadedFileRecord]:
         if self.repository is None:
             return []

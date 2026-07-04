@@ -52,6 +52,10 @@ export async function createFilePreview(
   return apiClient.postForm<FilePreview>("/imports/file-previews", body);
 }
 
+export async function getFilePreview(previewId: string): Promise<FilePreview> {
+  return apiClient.get<FilePreview>(`/imports/file-previews/${previewId}`);
+}
+
 export async function listUploads(
   projectId: string,
 ): Promise<UploadListResponse> {

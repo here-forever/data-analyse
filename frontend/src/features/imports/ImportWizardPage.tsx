@@ -18,6 +18,7 @@ import type { DatasetField } from "../datasets/api";
 import {
   createDataset,
   createFilePreview,
+  getFilePreview,
   listUploads,
   type FilePreview,
   type UploadRecord,
@@ -88,6 +89,20 @@ export function ImportWizardPage() {
         preview_id: preview.id,
         project_id: preview.project_id,
       });
+    },
+  });
+
+  const savedPreviewMutation = useMutation({
+    mutationFn: getFilePreview,
+    onSuccess: (result) => {
+      setProjectId(result.project_id);
+      setSubmittedProjectId(result.project_id);
+      setSelectedFile(null);
+      setPreview(result);
+      setFields(result.fields);
+      setDatasetName(cleanDatasetName(result.file_name));
+      datasetMutation.reset();
+      previewMutation.reset();
     },
   });
 
@@ -286,7 +301,14 @@ export function ImportWizardPage() {
         error={uploadsQuery.error}
         isLoading={uploadsQuery.isLoading || uploadsQuery.isFetching}
         projectId={submittedProjectId}
+        loadingPreviewId={
+          savedPreviewMutation.isPending
+            ? savedPreviewMutation.variables
+            : undefined
+        }
+        openPreviewError={savedPreviewMutation.error}
         uploads={uploadsQuery.data?.items ?? []}
+        onOpenPreview={(previewId) => savedPreviewMutation.mutate(previewId)}
         onRefresh={() =>
           void queryClient.invalidateQueries({
             queryKey: ["import-uploads", submittedProjectId],
@@ -487,12 +509,18 @@ function UploadHistoryPanel({
   projectId,
   isLoading,
   error,
+  loadingPreviewId,
+  openPreviewError,
+  onOpenPreview,
   onRefresh,
 }: {
   uploads: UploadRecord[];
   projectId: string;
   isLoading: boolean;
   error: Error | null;
+  loadingPreviewId?: string;
+  openPreviewError: Error | null;
+  onOpenPreview: (previewId: string) => void;
   onRefresh: () => void;
 }) {
   const summary = useMemo(() => summarizeUploads(uploads), [uploads]);
@@ -539,6 +567,11 @@ function UploadHistoryPanel({
           </button>
         </div>
       </div>
+      {openPreviewError ? (
+        <div className="border-b border-line bg-red-50 px-4 py-3 text-sm text-red-700">
+          {openPreviewError.message}
+        </div>
+      ) : null}
 
       {isLoading ? (
         <div className="p-4">
@@ -579,7 +612,12 @@ function UploadHistoryPanel({
             </thead>
             <tbody>
               {uploads.map((upload) => (
-                <UploadHistoryRow key={upload.id} upload={upload} />
+                <UploadHistoryRow
+                  key={upload.id}
+                  loadingPreviewId={loadingPreviewId}
+                  onOpenPreview={onOpenPreview}
+                  upload={upload}
+                />
               ))}
             </tbody>
           </table>
@@ -589,7 +627,18 @@ function UploadHistoryPanel({
   );
 }
 
-function UploadHistoryRow({ upload }: { upload: UploadRecord }) {
+function UploadHistoryRow({
+  upload,
+  loadingPreviewId,
+  onOpenPreview,
+}: {
+  upload: UploadRecord;
+  loadingPreviewId?: string;
+  onOpenPreview: (previewId: string) => void;
+}) {
+  const isOpeningPreview =
+    upload.preview_id !== null && upload.preview_id === loadingPreviewId;
+
   return (
     <tr className="align-top hover:bg-slate-50">
       <td className="border-b border-line px-4 py-3">
@@ -629,12 +678,28 @@ function UploadHistoryRow({ upload }: { upload: UploadRecord }) {
         <p className="mt-1">Updated {formatDate(upload.updated_at)}</p>
       </td>
       <td className="border-b border-line px-4 py-3">
-        <Link
-          className="inline-flex h-8 items-center rounded-md border border-brand/20 bg-blue-50 px-3 text-xs font-semibold text-brand transition hover:bg-blue-100"
-          to={`/tasks?project_id=${encodeURIComponent(upload.project_id)}`}
-        >
-          Task trace
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          {upload.preview_id ? (
+            <button
+              className="inline-flex h-8 items-center rounded-md border border-emerald/30 bg-emerald/10 px-3 text-xs font-semibold text-emerald transition hover:bg-emerald/20 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isOpeningPreview}
+              onClick={() => {
+                if (upload.preview_id) {
+                  onOpenPreview(upload.preview_id);
+                }
+              }}
+              type="button"
+            >
+              {isOpeningPreview ? "Opening" : "Open preview"}
+            </button>
+          ) : null}
+          <Link
+            className="inline-flex h-8 items-center rounded-md border border-brand/20 bg-blue-50 px-3 text-xs font-semibold text-brand transition hover:bg-blue-100"
+            to={`/tasks?project_id=${encodeURIComponent(upload.project_id)}`}
+          >
+            Task trace
+          </Link>
+        </div>
       </td>
     </tr>
   );

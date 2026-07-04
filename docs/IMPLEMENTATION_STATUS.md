@@ -49,6 +49,7 @@ Current implementation has moved beyond pure planning. The repository now has ba
 - Staged uploaded-file storage before parsing, with upload status and parse error metadata.
 - Project-scoped upload/import history API showing successful and failed file access attempts.
 - Persisted import-preview metadata and sample rows.
+- Saved import-preview retrieval API for reopening parsed upload records.
 - Dataset metadata creation API.
 - Project-scoped duplicate dataset name protection.
 - Formal dataset materialization into physical database tables.
@@ -95,6 +96,7 @@ Initial core tables have been modeled and migrated:
 - Import wizard page for CSV/Excel preview and dataset creation.
 - Import wizard upload status and failure recovery hints.
 - Import wizard upload history panel with parsed/failed file records and task trace links.
+- Import wizard can reopen saved parsed previews from upload history and continue dataset creation.
 - Dataset workspace quality overview for materialized datasets.
 - Cleaning workbench page for visual recipe preview, save, and execution.
 - SQL workspace page for project-scoped query execution and data view saving.
@@ -134,6 +136,7 @@ Initial core tables have been modeled and migrated:
 - Uploads are staged before parsing, so failed parse attempts can be traced to an uploaded file record.
 - Upload/import history is queryable by project and shows uploaded-file status, parse errors, and linked preview metadata when parsing succeeds.
 - Import preview stores sample rows for confirmation before formal dataset creation.
+- Parsed upload history records can restore their saved preview metadata without re-uploading the source file.
 - Formal dataset creation creates and populates a physical table.
 - Dataset names are unique within a project to avoid accidental overwrite-like workflows.
 - Dataset quality profiling is computed on demand from materialized rows and is not yet cached or task-backed.

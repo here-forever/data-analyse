@@ -46,6 +46,14 @@ def list_uploaded_files(
     )
 
 
+@router.get("/file-previews/{preview_id}", response_model=FilePreviewResponse)
+def get_file_preview(
+    preview_id: str,
+    imports: Annotated[ImportService, Depends(get_import_service)],
+) -> FilePreviewResponse:
+    return to_file_preview_response(imports.require_preview(preview_id))
+
+
 @router.post(
     "/file-previews",
     response_model=FilePreviewResponse,

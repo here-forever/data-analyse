@@ -289,3 +289,53 @@ def test_import_upload_history_lists_success_and_failed_records(client: TestClie
     assert failed_upload["error_message"] == "Only CSV and Excel files are supported"
     assert failed_upload["preview_id"] is None
     assert failed_upload["preview_row_count"] is None
+
+
+def test_saved_file_preview_can_be_reopened_from_history(client: TestClient) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+
+    upload_response = client.post(
+        "/api/imports/file-previews",
+        headers=headers,
+        data={"project_id": project_id},
+        files={
+            "file": (
+                "customers.csv",
+                b"customer,score\nAda,98\nLin,87\n",
+                "text/csv",
+            )
+        },
+    )
+    assert upload_response.status_code == 201
+    created_preview = upload_response.json()
+
+    history_response = client.get(
+        "/api/imports/uploads",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+    assert history_response.status_code == 200
+    upload = history_response.json()["items"][0]
+    assert upload["preview_id"] == created_preview["id"]
+
+    preview_response = client.get(
+        f"/api/imports/file-previews/{upload['preview_id']}",
+        headers=headers,
+    )
+
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["id"] == created_preview["id"]
+    assert preview["uploaded_file_id"] == upload["id"]
+    assert preview["file_name"] == "customers.csv"
+    assert preview["row_count"] == 2
+    assert preview["fields"][0]["name"] == "customer"
+    assert preview["sample_rows"][0]["score"] == 98
+
+    missing_preview_response = client.get(
+        "/api/imports/file-previews/preview_missing",
+        headers=headers,
+    )
+    assert missing_preview_response.status_code == 404
+    assert missing_preview_response.json()["error"]["code"] == "preview_not_found"
