@@ -25,3 +25,8 @@ class TaskResponse(BaseModel):
 
 class TaskListResponse(BaseModel):
     items: list[TaskResponse]
+
+
+class TaskRetryResponse(BaseModel):
+    original_task: TaskResponse
+    retry_task: TaskResponse

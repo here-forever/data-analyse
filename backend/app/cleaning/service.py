@@ -159,6 +159,22 @@ class CleaningService:
         recipe_id: str,
         payload: CleaningExecuteRequest,
     ) -> CleaningExecuteResponse:
+        try:
+            return self._execute_recipe(recipe_id=recipe_id, payload=payload)
+        except Exception as error:
+            self._record_recipe_execution_failure(
+                recipe_id=recipe_id,
+                output_name=payload.output_name,
+                error=error,
+            )
+            raise
+
+    def _execute_recipe(
+        self,
+        *,
+        recipe_id: str,
+        payload: CleaningExecuteRequest,
+    ) -> CleaningExecuteResponse:
         recipe = self.get_recipe(recipe_id)
         dataset, rows = self.datasets.list_dataset_rows(recipe.source_dataset_id)
         if dataset.project_id != recipe.project_id:
@@ -303,6 +319,34 @@ class CleaningService:
             task_type="cleaning_recipe_execution",
             related_resource_type="dataset",
             related_resource_id=derived_dataset_id,
+        )
+
+    def _record_recipe_execution_failure(
+        self,
+        *,
+        recipe_id: str,
+        output_name: str,
+        error: Exception,
+    ) -> None:
+        if self.tasks is None:
+            return
+
+        project_id: str | None = None
+        related_resource_id = recipe_id
+        try:
+            recipe = self.get_recipe(recipe_id)
+            project_id = recipe.project_id
+            related_resource_id = recipe.id
+        except Exception:
+            pass
+
+        self.tasks.record_exception(
+            project_id=project_id,
+            name=f"Execute cleaning recipe failed: {output_name}",
+            task_type="cleaning_recipe_execution",
+            error=error,
+            related_resource_type="cleaning_recipe",
+            related_resource_id=related_resource_id,
         )
 
     def _record_recipe_execution(

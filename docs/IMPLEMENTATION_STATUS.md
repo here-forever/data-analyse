@@ -56,6 +56,8 @@ Current implementation has moved beyond pure planning. The repository now has ba
 - Chart definition creation/list APIs backed by data views.
 - Dashboard/report layout creation/list APIs backed by chart resources.
 - Task center API for project-scoped workflow task status visibility.
+- Task failure records for import parsing, dataset materialization, cleaning execution, SQL execution/materialization, and chart/dashboard save actions.
+- Task retry request API that creates a pending retry task as a lightweight queue placeholder.
 - Basic operation log and lineage records for implemented workflow actions.
 - Persisted dataset fields and physical table name mapping.
 
@@ -91,6 +93,7 @@ Initial core tables have been modeled and migrated:
 - Chart configuration page with real Data View fields and ECharts rendering.
 - Dashboard/report source page with basic free-layout report mode.
 - Task center page with project filtering, status summary, workflow coverage, and recent task table.
+- Task center retry entry for failed or retryable tasks, with immediate list refresh and retry request feedback.
 - Placeholder pages remain only for features not yet implemented.
 - Frontend API client tests.
 
@@ -110,9 +113,9 @@ Initial core tables have been modeled and migrated:
 - Frontend is reachable at `http://127.0.0.1:5173`.
 - Backend health check is reachable at `http://127.0.0.1:8000/api/health`.
 - Alembic migration has been applied to Docker PostgreSQL.
-- Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, and task center listing were verified through tests or API flows.
-- Backend test suite passed in Docker: 40 tests.
-- Frontend test suite passed: 20 tests.
+- Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, and retry request flow were verified through tests or API flows.
+- Backend test suite passed in Docker: 42 tests.
+- Frontend test suite passed: 21 tests.
 - Frontend lint passed.
 - Frontend build previously passed and should be rerun after each UI milestone.
 
@@ -122,7 +125,8 @@ Initial core tables have been modeled and migrated:
 - Import preview stores sample rows for confirmation before formal dataset creation.
 - Formal dataset creation creates and populates a physical table.
 - Operation logs and lineage records exist for the implemented workflow actions, but the lineage graph UI is not implemented yet.
-- Task center records synchronous workflow actions as completed tasks; pending/running/retry flows are reserved for the later queue-backed implementation.
+- Task center records synchronous workflow actions as completed or failed/retryable tasks.
+- Retry requests create pending retry tasks as a lightweight placeholder; they do not yet replay the original business operation without a worker/queue.
 - Authentication is still development-oriented and not production JWT/auth hardening.
 - External database import/connectors and API data sources are still reserved for later milestones.
 - Scheduled sync and distributed worker execution are not implemented yet.
@@ -140,11 +144,11 @@ Future work must preserve these boundaries:
 
 ## Recommended Next Build Step
 
-The next implementation step should strengthen Task Center and traceability from MVP records toward operational workflows:
+The next implementation step should connect task retry placeholders to resource-aware recovery flows:
 
-1. Add task failure recording around high-risk actions such as import parsing, cleaning execution, and SQL materialization.
-2. Add retry entry semantics for retryable tasks without introducing a distributed worker yet.
-3. Add task center links from related resources to datasets, data views, charts, and dashboards.
+1. Add task center links from related resources to datasets, data views, charts, and dashboards.
+2. Define replay payload metadata for each retryable task type.
+3. Add a lightweight in-process retry executor for selected safe operations, or defer execution to the future queue worker.
 4. Then implement the external database read-only connector MVP.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

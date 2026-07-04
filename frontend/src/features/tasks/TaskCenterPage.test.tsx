@@ -76,6 +76,7 @@ describe("TaskCenterPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("SQL data view")).toBeInTheDocument();
     expect(screen.getByText("Template missing")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(screen.getByText("3")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();
@@ -87,6 +88,57 @@ describe("TaskCenterPage", () => {
         expect.any(Object),
       );
     });
+  });
+
+  test("requests retry for failed tasks and refreshes the list", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/tasks/task_failed/retry")) {
+        return Promise.resolve(
+          jsonResponse({
+            original_task: {
+              ...failedTask,
+              status: "retryable",
+              error_message: "Template missing | Retry requested as task_retry",
+            },
+            retry_task: {
+              ...failedTask,
+              id: "task_retry",
+              name: "Retry requested: Export failed",
+              status: "pending",
+              progress: 0,
+              error_message: null,
+            },
+          }),
+        );
+      }
+
+      if (url.includes("/tasks?")) {
+        return Promise.resolve(jsonResponse({ items: [failedTask] }));
+      }
+
+      return Promise.resolve(jsonResponse({}));
+    });
+    const user = userEvent.setup();
+
+    renderWithProviders(<TaskCenterPage />);
+
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
+
+    expect(
+      await screen.findByText("Retry requested as task_retry"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/api/tasks/task_failed/retry",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:8000/api/tasks?project_id=prj_demo",
+      expect.any(Object),
+    );
   });
 
   test("submits a project id and reloads project tasks", async () => {
@@ -131,3 +183,20 @@ function jsonResponse(payload: unknown): Response {
     json: async () => payload,
   } as Response;
 }
+
+const failedTask = {
+  id: "task_failed",
+  project_id: "prj_demo",
+  initiator_id: "usr_admin",
+  name: "Export failed",
+  task_type: "dashboard_save",
+  status: "failed",
+  progress: 100,
+  error_message: "Template missing",
+  related_resource_type: "dashboard",
+  related_resource_id: "dash_1",
+  started_at: "2026-07-04T08:02:00Z",
+  finished_at: "2026-07-04T08:02:05Z",
+  created_at: "2026-07-04T08:02:00Z",
+  updated_at: "2026-07-04T08:02:05Z",
+};

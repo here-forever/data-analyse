@@ -24,8 +24,17 @@ export interface TaskListResponse {
   items: TaskItem[];
 }
 
+export interface TaskRetryResponse {
+  original_task: TaskItem;
+  retry_task: TaskItem;
+}
+
 export async function listTasks(projectId: string): Promise<TaskListResponse> {
   return apiClient.get<TaskListResponse>("/tasks", {
     project_id: projectId,
   });
+}
+
+export async function retryTask(taskId: string): Promise<TaskRetryResponse> {
+  return apiClient.post<TaskRetryResponse>(`/tasks/${taskId}/retry`);
 }

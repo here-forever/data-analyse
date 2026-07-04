@@ -55,6 +55,27 @@ class ImportService:
         file_name: str,
         content: bytes,
     ) -> FilePreview:
+        try:
+            return self._create_file_preview(
+                project_id=project_id,
+                file_name=file_name,
+                content=content,
+            )
+        except Exception as error:
+            self._record_preview_failure(
+                project_id=project_id,
+                file_name=file_name,
+                error=error,
+            )
+            raise
+
+    def _create_file_preview(
+        self,
+        *,
+        project_id: str,
+        file_name: str,
+        content: bytes,
+    ) -> FilePreview:
         parsed_file = parse_tabular_file(file_name, content)
         preview_id = (
             new_id("preview")
@@ -216,6 +237,25 @@ class ImportService:
             task_type="file_preview_parse",
             related_resource_type="file_import_preview",
             related_resource_id=preview.id,
+        )
+
+    def _record_preview_failure(
+        self,
+        *,
+        project_id: str,
+        file_name: str,
+        error: Exception,
+    ) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_exception(
+            project_id=project_id,
+            name=f"Parse file preview failed: {file_name}",
+            task_type="file_preview_parse",
+            error=error,
+            related_resource_type="uploaded_file",
+            related_resource_id=None,
         )
 
 

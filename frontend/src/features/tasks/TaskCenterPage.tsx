@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,7 +14,7 @@ import {
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { listTasks, type TaskItem, type TaskStatus } from "./api";
+import { listTasks, retryTask, type TaskItem, type TaskStatus } from "./api";
 
 const DEFAULT_PROJECT_ID = "prj_demo";
 
@@ -25,6 +25,7 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   dataset_materialization: "Dataset materialization",
   derived_dataset_materialization: "Derived dataset",
   file_preview_parse: "File preview parse",
+  sql_query_run: "SQL query",
   sql_data_view_materialization: "SQL data view",
 };
 
@@ -60,6 +61,7 @@ const STATUS_META: Record<
 };
 
 export function TaskCenterPage() {
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const initialProjectId = searchParams.get("project_id") ?? DEFAULT_PROJECT_ID;
   const [projectId, setProjectId] = useState(initialProjectId);
@@ -74,6 +76,14 @@ export function TaskCenterPage() {
 
   const tasks = useMemo(() => tasksQuery.data?.items ?? [], [tasksQuery.data]);
   const summary = useMemo(() => summarizeTasks(tasks), [tasks]);
+  const retryMutation = useMutation({
+    mutationFn: retryTask,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["tasks", submittedProjectId],
+      });
+    },
+  });
 
   function submitProject(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -126,6 +136,12 @@ export function TaskCenterPage() {
           tasks={tasks}
           isLoading={tasksQuery.isLoading || tasksQuery.isFetching}
           error={tasksQuery.error}
+          retryingTaskId={
+            retryMutation.isPending ? retryMutation.variables : undefined
+          }
+          retryError={retryMutation.error}
+          retryTaskId={retryMutation.data?.retry_task.id}
+          onRetry={(taskId) => retryMutation.mutate(taskId)}
         />
       </div>
     </section>
@@ -228,10 +244,18 @@ function TaskTable({
   tasks,
   isLoading,
   error,
+  retryingTaskId,
+  retryError,
+  retryTaskId,
+  onRetry,
 }: {
   tasks: TaskItem[];
   isLoading: boolean;
   error: Error | null;
+  retryingTaskId?: string;
+  retryError: Error | null;
+  retryTaskId?: string;
+  onRetry: (taskId: string) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-md border border-line bg-panel shadow-panel">
@@ -265,21 +289,50 @@ function TaskTable({
                 <th className="border-b border-line px-4 py-3 font-semibold">
                   Finished
                 </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody>
               {tasks.map((task) => (
-                <TaskRow key={task.id} task={task} />
+                <TaskRow
+                  key={task.id}
+                  onRetry={onRetry}
+                  retryingTaskId={retryingTaskId}
+                  task={task}
+                />
               ))}
             </tbody>
           </table>
+          {retryTaskId ? (
+            <div className="border-t border-line bg-emerald/10 px-4 py-3 text-sm text-emerald">
+              Retry requested as {retryTaskId}
+            </div>
+          ) : null}
+          {retryError ? (
+            <div className="border-t border-line bg-red-50 px-4 py-3 text-sm text-red-700">
+              {retryError.message}
+            </div>
+          ) : null}
         </div>
       )}
     </div>
   );
 }
 
-function TaskRow({ task }: { task: TaskItem }) {
+function TaskRow({
+  task,
+  retryingTaskId,
+  onRetry,
+}: {
+  task: TaskItem;
+  retryingTaskId?: string;
+  onRetry: (taskId: string) => void;
+}) {
+  const canRetry = task.status === "failed" || task.status === "retryable";
+  const isRetrying = retryingTaskId === task.id;
+
   return (
     <tr className="align-top hover:bg-slate-50">
       <td className="border-b border-line px-4 py-3">
@@ -310,6 +363,21 @@ function TaskRow({ task }: { task: TaskItem }) {
       </td>
       <td className="border-b border-line px-4 py-3 text-xs text-muted">
         {formatDate(task.finished_at ?? task.created_at)}
+      </td>
+      <td className="border-b border-line px-4 py-3">
+        {canRetry ? (
+          <button
+            className="inline-flex h-8 items-center gap-2 rounded-md border border-amber/30 bg-amber/10 px-3 text-xs font-semibold text-amber transition hover:bg-amber/20 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isRetrying}
+            onClick={() => onRetry(task.id)}
+            type="button"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {isRetrying ? "Requesting" : "Retry"}
+          </button>
+        ) : (
+          <span className="text-xs text-muted">-</span>
+        )}
       </td>
     </tr>
   );

@@ -14,6 +14,15 @@ class TaskRepository:
         self.session.refresh(task)
         return task
 
+    def get_task(self, task_id: str) -> TaskModel | None:
+        return self.session.get(TaskModel, task_id)
+
+    def update_task(self, task: TaskModel) -> TaskModel:
+        self.session.add(task)
+        self.session.commit()
+        self.session.refresh(task)
+        return task
+
     def list_tasks(self, project_id: str | None = None) -> list[TaskModel]:
         statement = select(TaskModel).order_by(TaskModel.created_at.desc())
         if project_id:

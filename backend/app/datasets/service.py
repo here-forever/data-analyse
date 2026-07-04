@@ -116,6 +116,20 @@ class DatasetService:
         return dataset, rows
 
     def create_dataset(self, payload: DatasetCreateRequest) -> Dataset:
+        try:
+            return self._create_dataset(payload)
+        except Exception as error:
+            self._record_dataset_failure(
+                project_id=payload.project_id,
+                name=payload.name,
+                task_type="dataset_materialization",
+                error=error,
+                related_resource_type="file_import_preview",
+                related_resource_id=payload.preview_id,
+            )
+            raise
+
+    def _create_dataset(self, payload: DatasetCreateRequest) -> Dataset:
         preview = self.imports.get_preview(payload.preview_id)
         if preview is None or preview.project_id != payload.project_id:
             raise AppError(message="Preview not found", code="preview_not_found", status_code=404)
@@ -178,6 +192,38 @@ class DatasetService:
         return dataset
 
     def create_derived_dataset(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        source_dataset_id: str,
+        fields: list[ImportFieldPreview],
+        rows: list[dict[str, object | None]],
+        lineage_transform_type: str,
+        lineage_transform_id: str,
+    ) -> Dataset:
+        try:
+            return self._create_derived_dataset(
+                project_id=project_id,
+                name=name,
+                source_dataset_id=source_dataset_id,
+                fields=fields,
+                rows=rows,
+                lineage_transform_type=lineage_transform_type,
+                lineage_transform_id=lineage_transform_id,
+            )
+        except Exception as error:
+            self._record_dataset_failure(
+                project_id=project_id,
+                name=name,
+                task_type="derived_dataset_materialization",
+                error=error,
+                related_resource_type="dataset",
+                related_resource_id=source_dataset_id,
+            )
+            raise
+
+    def _create_derived_dataset(
         self,
         *,
         project_id: str,
@@ -408,6 +454,28 @@ class DatasetService:
             task_type=task_type,
             related_resource_type="dataset",
             related_resource_id=dataset.id,
+        )
+
+    def _record_dataset_failure(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        task_type: str,
+        error: Exception,
+        related_resource_type: str | None,
+        related_resource_id: str | None,
+    ) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_exception(
+            project_id=project_id,
+            name=f"Materialize dataset failed: {name}",
+            task_type=task_type,
+            error=error,
+            related_resource_type=related_resource_type,
+            related_resource_id=related_resource_id,
         )
 
 

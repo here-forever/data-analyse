@@ -232,3 +232,74 @@ def test_task_center_can_filter_by_project(client: TestClient) -> None:
         second_bundle["preview"]["id"],
         second_bundle["dataset"]["id"],
     }
+
+
+def test_failed_task_can_request_retry(client: TestClient) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+
+    failed_upload_response = client.post(
+        "/api/imports/file-previews",
+        headers=headers,
+        data={"project_id": project_id},
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert failed_upload_response.status_code == 400
+    assert failed_upload_response.json()["error"]["code"] == "unsupported_file_type"
+
+    list_response = client.get(
+        "/api/tasks",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+    assert list_response.status_code == 200
+    failed_task = list_response.json()["items"][0]
+    assert failed_task["task_type"] == "file_preview_parse"
+    assert failed_task["status"] == "failed"
+    assert failed_task["error_message"] == "Only CSV and Excel files are supported"
+
+    retry_response = client.post(
+        f"/api/tasks/{failed_task['id']}/retry",
+        headers=headers,
+    )
+    assert retry_response.status_code == 200
+    retry_payload = retry_response.json()
+    assert retry_payload["original_task"]["id"] == failed_task["id"]
+    assert retry_payload["original_task"]["status"] == "retryable"
+    assert "Retry requested as" in retry_payload["original_task"]["error_message"]
+    assert retry_payload["retry_task"]["status"] == "pending"
+    assert retry_payload["retry_task"]["progress"] == 0
+    assert retry_payload["retry_task"]["task_type"] == failed_task["task_type"]
+
+    refreshed_response = client.get(
+        "/api/tasks",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+    assert refreshed_response.status_code == 200
+    refreshed_tasks = refreshed_response.json()["items"]
+    assert {task["status"] for task in refreshed_tasks} >= {"pending", "retryable"}
+
+
+def test_successful_task_cannot_request_retry(client: TestClient) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+    create_dataset(client, headers, project_id)
+
+    list_response = client.get(
+        "/api/tasks",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+    assert list_response.status_code == 200
+    success_task = next(
+        task for task in list_response.json()["items"] if task["status"] == "success"
+    )
+
+    retry_response = client.post(
+        f"/api/tasks/{success_task['id']}/retry",
+        headers=headers,
+    )
+
+    assert retry_response.status_code == 400
+    assert retry_response.json()["error"]["code"] == "task_not_retryable"

@@ -56,6 +56,20 @@ class VisualizationService:
         self._dashboards = {}
 
     def create_chart(self, payload: ChartCreateRequest) -> Chart:
+        try:
+            return self._create_chart(payload)
+        except Exception as error:
+            self._record_visualization_failure(
+                project_id=payload.project_id,
+                name=f"Save chart failed: {payload.name}",
+                task_type="chart_save",
+                error=error,
+                related_resource_type="data_view",
+                related_resource_id=payload.data_view_id,
+            )
+            raise
+
+    def _create_chart(self, payload: ChartCreateRequest) -> Chart:
         self._validate_data_view_scope(
             project_id=payload.project_id,
             data_view_id=payload.data_view_id,
@@ -112,6 +126,20 @@ class VisualizationService:
         return chart
 
     def create_dashboard(self, payload: DashboardCreateRequest) -> Dashboard:
+        try:
+            return self._create_dashboard(payload)
+        except Exception as error:
+            self._record_visualization_failure(
+                project_id=payload.project_id,
+                name=f"Save dashboard failed: {payload.name}",
+                task_type="dashboard_save",
+                error=error,
+                related_resource_type="dashboard",
+                related_resource_id=None,
+            )
+            raise
+
+    def _create_dashboard(self, payload: DashboardCreateRequest) -> Dashboard:
         referenced_chart_ids = sorted(extract_chart_ids(payload.layout))
         for chart_id in referenced_chart_ids:
             chart = self.get_chart(chart_id)
@@ -271,6 +299,28 @@ class VisualizationService:
             task_type="dashboard_save",
             related_resource_type="dashboard",
             related_resource_id=dashboard.id,
+        )
+
+    def _record_visualization_failure(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        task_type: str,
+        error: Exception,
+        related_resource_type: str | None,
+        related_resource_id: str | None,
+    ) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_exception(
+            project_id=project_id,
+            name=name,
+            task_type=task_type,
+            error=error,
+            related_resource_type=related_resource_type,
+            related_resource_id=related_resource_id,
         )
 
 

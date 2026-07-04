@@ -60,16 +60,26 @@ class SqlWorkspaceService:
         )
 
     def run(self, payload: SqlRunRequest) -> SqlRunResponse:
-        rewritten_sql, columns, rows = self._execute_project_sql(
-            project_id=payload.project_id,
-            sql=payload.sql,
-            limit=payload.limit,
-        )
-        self._record_sql_audit(
-            project_id=payload.project_id,
-            sql=payload.sql,
-            row_count=len(rows),
-        )
+        try:
+            rewritten_sql, columns, rows = self._execute_project_sql(
+                project_id=payload.project_id,
+                sql=payload.sql,
+                limit=payload.limit,
+            )
+            self._record_sql_audit(
+                project_id=payload.project_id,
+                sql=payload.sql,
+                row_count=len(rows),
+            )
+        except Exception as error:
+            self._record_sql_failure(
+                project_id=payload.project_id,
+                name="Run SQL query failed",
+                task_type="sql_query_run",
+                sql=payload.sql,
+                error=error,
+            )
+            raise
 
         return SqlRunResponse(
             project_id=payload.project_id,
@@ -81,39 +91,51 @@ class SqlWorkspaceService:
         )
 
     def save_as_data_view(self, payload: SqlSaveDataViewRequest):
-        if self.data_views is None:
-            raise AppError("Data view service is not configured", "data_view_service_missing", 500)
+        try:
+            if self.data_views is None:
+                raise AppError(
+                    "Data view service is not configured", "data_view_service_missing", 500
+                )
 
-        rewritten_sql, columns, rows = self._execute_project_sql(
-            project_id=payload.project_id,
-            sql=payload.sql,
-            limit=payload.limit,
-        )
-        fields = infer_data_view_fields(columns=columns, rows=rows)
-        data_view = self.data_views.create_data_view(
-            DataViewCreateRequest(
+            rewritten_sql, columns, rows = self._execute_project_sql(
                 project_id=payload.project_id,
-                name=payload.name,
-                description=payload.description,
-                source_type="sql_query",
-                source_id=None,
-                source_sql=payload.sql,
-                fields=fields,
-                rows=rows,
+                sql=payload.sql,
+                limit=payload.limit,
             )
-        )
-        self._record_sql_save_audit(
-            project_id=payload.project_id,
-            sql=payload.sql,
-            data_view_id=data_view.id,
-            row_count=len(rows),
-        )
-        self._record_sql_save_task(
-            project_id=payload.project_id,
-            data_view_id=data_view.id,
-            data_view_name=data_view.name,
-        )
-        return data_view
+            fields = infer_data_view_fields(columns=columns, rows=rows)
+            data_view = self.data_views.create_data_view(
+                DataViewCreateRequest(
+                    project_id=payload.project_id,
+                    name=payload.name,
+                    description=payload.description,
+                    source_type="sql_query",
+                    source_id=None,
+                    source_sql=payload.sql,
+                    fields=fields,
+                    rows=rows,
+                )
+            )
+            self._record_sql_save_audit(
+                project_id=payload.project_id,
+                sql=payload.sql,
+                data_view_id=data_view.id,
+                row_count=len(rows),
+            )
+            self._record_sql_save_task(
+                project_id=payload.project_id,
+                data_view_id=data_view.id,
+                data_view_name=data_view.name,
+            )
+            return data_view
+        except Exception as error:
+            self._record_sql_failure(
+                project_id=payload.project_id,
+                name=f"Materialize SQL data view failed: {payload.name}",
+                task_type="sql_data_view_materialization",
+                sql=payload.sql,
+                error=error,
+            )
+            raise
 
     def _execute_project_sql(
         self,
@@ -198,6 +220,27 @@ class SqlWorkspaceService:
             task_type="sql_data_view_materialization",
             related_resource_type="data_view",
             related_resource_id=data_view_id,
+        )
+
+    def _record_sql_failure(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        task_type: str,
+        sql: str,
+        error: Exception,
+    ) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_exception(
+            project_id=project_id,
+            name=name,
+            task_type=task_type,
+            error=error,
+            related_resource_type="sql_query",
+            related_resource_id=sql[:128],
         )
 
 
