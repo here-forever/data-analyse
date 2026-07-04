@@ -69,3 +69,18 @@ Current local development import endpoints include:
 - `POST /api/datasets`
 
 The import preview endpoint supports CSV and Excel files, returns inferred fields, row count, and sample rows. Dataset creation currently records development metadata from a confirmed preview. Physical PostgreSQL dataset tables will be added when the database milestone is implemented.
+
+## Docker Development
+
+From the repository root:
+
+```powershell
+docker compose up --build backend postgres redis
+```
+
+The backend container uses:
+
+```text
+DATABASE_URL=postgresql+psycopg://data_analysis_user:data_analysis_password@postgres:5432/data_analysis_system
+REDIS_URL=redis://redis:6379/0
+```

@@ -48,7 +48,7 @@ Frontend:
 Deployment direction:
 
 - Local development first.
-- Docker Compose after Docker/WSL are installed.
+- Docker Compose for PostgreSQL, Redis, backend, and frontend.
 
 ## MVP Scope
 
@@ -112,3 +112,20 @@ The backend now includes local-runnable endpoints for:
 - Dataset metadata creation from a confirmed preview.
 
 This validates the first half of the import flow before formal PostgreSQL physical dataset table creation is added.
+
+## Docker Compose Development
+
+After Docker Desktop and WSL2 are available, the project can start its development stack with:
+
+```powershell
+docker compose up --build
+```
+
+Local service URLs:
+
+- Frontend: `http://127.0.0.1:5173`
+- Backend health: `http://127.0.0.1:8000/api/health`
+- PostgreSQL: `127.0.0.1:5432`
+- Redis: `127.0.0.1:6379`
+
+Docker details are documented in `docker/README.md`.

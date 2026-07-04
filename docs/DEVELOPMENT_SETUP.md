@@ -4,7 +4,7 @@ Last updated: 2026-07-04
 
 ## Current Environment Status
 
-This project can begin local-first development before Docker and WSL are installed.
+This project can run both local-first development commands and Docker Compose integration services.
 
 Verified on the current machine:
 
@@ -12,22 +12,22 @@ Verified on the current machine:
 - Python 3.13.9 is available.
 - Node.js v24.14.0 is available.
 - `npm.cmd` works.
+- Docker is available.
+- Docker Compose is available.
+- WSL2 is available.
 
-Known missing or limited tools:
+Known local notes:
 
-- Docker is not currently available on PATH.
-- WSL is not currently available.
 - PowerShell blocks `npm.ps1`; use `npm.cmd` on Windows until execution policy is adjusted.
+- PostgreSQL command-line tools such as `psql` may not be on Windows PATH. Docker Compose provides PostgreSQL for development.
 
-## Local Development Strategy Before Docker
+## Local Development Strategy
 
-Until Docker/WSL are installed, develop in this order:
+Use local commands for fast backend/frontend checks, and Docker Compose for integrated service development:
 
-1. Repository structure.
-2. Backend FastAPI skeleton using a local Python virtual environment.
-3. Frontend React skeleton using `npm.cmd`.
-4. SQLite or local PostgreSQL can be considered only if needed for early backend checks.
-5. Docker Compose is added later when Docker Desktop and WSL2 are available.
+1. Backend FastAPI tests using the local Python virtual environment.
+2. Frontend React tests/build using `npm.cmd`.
+3. Docker Compose for PostgreSQL, Redis, backend, and frontend integration.
 
 ## Required Commands To Check Later
 
@@ -101,4 +101,53 @@ Build frontend:
 cd frontend
 npm.cmd run build
 cd ..
+```
+
+## Docker Compose Commands
+
+Start the integrated development stack:
+
+```powershell
+docker compose up --build
+```
+
+Start in the background:
+
+```powershell
+docker compose up -d --build
+```
+
+Check service status:
+
+```powershell
+docker compose ps
+```
+
+Stop services:
+
+```powershell
+docker compose down
+```
+
+Reset Docker-managed database/cache volumes:
+
+```powershell
+docker compose down -v
+```
+
+Local URLs:
+
+```text
+Frontend: http://127.0.0.1:5173
+Backend:  http://127.0.0.1:8000/api/health
+Postgres: 127.0.0.1:5432
+Redis:    127.0.0.1:6379
+```
+
+## Docker Image Pull Troubleshooting
+
+If Docker is installed but service startup fails while pulling images from Docker Hub, check Docker Desktop proxy or registry mirror settings. The project Compose file is valid when `docker compose config` succeeds; startup can be retried with:
+
+```powershell
+docker compose up -d --build
 ```
