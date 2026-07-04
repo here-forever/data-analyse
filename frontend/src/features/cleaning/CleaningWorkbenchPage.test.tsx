@@ -100,6 +100,19 @@ describe("CleaningWorkbenchPage", () => {
           );
         }
 
+        if (url.endsWith("/cleaning/recipes/clean_1/execute")) {
+          expect(init?.body).toContain('"output_name":"Customers Cleaned"');
+          return Promise.resolve(
+            jsonResponse({
+              recipe_id: "clean_1",
+              source_dataset_id: "dataset_1",
+              derived_dataset_id: "dataset_cleaned",
+              derived_dataset_name: "Customers Cleaned",
+              row_count: 2,
+            }),
+          );
+        }
+
         return Promise.resolve(jsonResponse({}));
       },
     );
@@ -110,6 +123,11 @@ describe("CleaningWorkbenchPage", () => {
     expect(await screen.findByText("Customers")).toBeInTheDocument();
     await user.clear(screen.getByLabelText("Recipe name"));
     await user.type(screen.getByLabelText("Recipe name"), "Customer cleanup");
+    await user.clear(screen.getByLabelText("Output dataset"));
+    await user.type(
+      screen.getByLabelText("Output dataset"),
+      "Customers Cleaned",
+    );
     await user.click(screen.getByRole("button", { name: "Fill null" }));
     await user.selectOptions(screen.getByLabelText("Field"), "region");
     await user.type(screen.getByLabelText("Fill value"), "Unknown");
@@ -122,9 +140,21 @@ describe("CleaningWorkbenchPage", () => {
     expect(
       await screen.findByText("Saved Customer cleanup"),
     ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "Execute to dataset" }),
+    );
+    expect(
+      await screen.findByText("Materialized Customers Cleaned (2 rows)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open derived dataset" }),
+    ).toHaveAttribute(
+      "href",
+      "/datasets?project_id=prj_demo&dataset_id=dataset_cleaned",
+    );
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
     });
   });
 });

@@ -26,6 +26,18 @@ export interface CleaningRecipeCreatePayload {
   steps: CleaningStepPayload[];
 }
 
+export interface CleaningExecutePayload {
+  output_name: string;
+}
+
+export interface CleaningExecution {
+  recipe_id: string;
+  source_dataset_id: string;
+  derived_dataset_id: string;
+  derived_dataset_name: string;
+  row_count: number;
+}
+
 export interface CleaningPreviewPayload {
   project_id: string;
   source_dataset_id: string;
@@ -53,4 +65,14 @@ export async function createCleaningRecipe(
   payload: CleaningRecipeCreatePayload,
 ): Promise<CleaningRecipe> {
   return apiClient.post<CleaningRecipe>("/cleaning/recipes", payload);
+}
+
+export async function executeCleaningRecipe(
+  recipeId: string,
+  payload: CleaningExecutePayload,
+): Promise<CleaningExecution> {
+  return apiClient.post<CleaningExecution>(
+    `/cleaning/recipes/${recipeId}/execute`,
+    payload,
+  );
 }

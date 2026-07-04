@@ -92,6 +92,26 @@ class DatasetService:
         )
         return dataset, rows
 
+    def list_dataset_rows(self, dataset_id: str) -> tuple[Dataset, list[dict[str, object | None]]]:
+        dataset = self.get_dataset(dataset_id)
+
+        if self.repository is None:
+            return dataset, []
+
+        table_map = self.repository.get_table_map(dataset_id)
+        if table_map is None:
+            raise AppError(
+                message="Dataset table mapping not found",
+                code="dataset_table_map_not_found",
+                status_code=404,
+            )
+
+        rows = self.repository.list_rows(
+            table_name=table_map.physical_table_name,
+            fields=dataset.fields,
+        )
+        return dataset, rows
+
     def create_dataset(self, payload: DatasetCreateRequest) -> Dataset:
         preview = self.imports.get_preview(payload.preview_id)
         if preview is None or preview.project_id != payload.project_id:
@@ -148,6 +168,75 @@ class DatasetService:
                 materialized_rows=materialized_rows,
             )
             self._record_dataset_audit(dataset)
+            return dataset
+
+        self._datasets[dataset.id] = dataset
+        return dataset
+
+    def create_derived_dataset(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        source_dataset_id: str,
+        fields: list[ImportFieldPreview],
+        rows: list[dict[str, object | None]],
+        lineage_transform_type: str,
+        lineage_transform_id: str,
+    ) -> Dataset:
+        self._validate_fields(fields)
+        dataset_id = new_id("dataset")
+        if self.repository is None:
+            dataset_id = f"dataset_{len(self._datasets) + 1}"
+        physical_table_name = build_physical_table_name(dataset_id)
+        dataset = Dataset(
+            id=dataset_id,
+            project_id=project_id,
+            name=name,
+            source_preview_id="",
+            physical_table_name=physical_table_name,
+            row_count=len(rows),
+            fields=fields,
+        )
+
+        if self.repository is not None:
+            self.repository.save_dataset(
+                dataset=DatasetModel(
+                    id=dataset.id,
+                    project_id=dataset.project_id,
+                    name=dataset.name,
+                    description=None,
+                    source_preview_id=None,
+                    row_count=dataset.row_count,
+                ),
+                fields=[
+                    DatasetFieldModel(
+                        id=new_id("field"),
+                        dataset_id=dataset.id,
+                        name=field.name,
+                        data_type=field.inferred_type,
+                        nullable=field.nullable,
+                        order=field.order,
+                        is_sensitive=False,
+                        masking_strategy=None,
+                    )
+                    for field in fields
+                ],
+                table_map=DatasetTableMapModel(
+                    id=new_id("dtm"),
+                    dataset_id=dataset.id,
+                    physical_table_name=dataset.physical_table_name,
+                ),
+                materialized_fields=fields,
+                materialized_rows=rows,
+            )
+            self._record_dataset_audit(dataset)
+            self._record_derived_lineage(
+                source_dataset_id=source_dataset_id,
+                target_dataset=dataset,
+                transform_type=lineage_transform_type,
+                transform_id=lineage_transform_id,
+            )
             return dataset
 
         self._datasets[dataset.id] = dataset
@@ -267,6 +356,9 @@ class DatasetService:
                 "materialized": True,
             },
         )
+        if not dataset.source_preview_id:
+            return
+
         self.audit.record_lineage(
             project_id=dataset.project_id,
             source_type="file_import_preview",
@@ -275,6 +367,27 @@ class DatasetService:
             target_id=dataset.id,
             transform_type="dataset_creation",
             transform_id=dataset.id,
+        )
+
+    def _record_derived_lineage(
+        self,
+        *,
+        source_dataset_id: str,
+        target_dataset: Dataset,
+        transform_type: str,
+        transform_id: str,
+    ) -> None:
+        if self.audit is None:
+            return
+
+        self.audit.record_lineage(
+            project_id=target_dataset.project_id,
+            source_type="dataset",
+            source_id=source_dataset_id,
+            target_type="dataset",
+            target_id=target_dataset.id,
+            transform_type=transform_type,
+            transform_id=transform_id,
         )
 
 

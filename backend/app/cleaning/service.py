@@ -4,6 +4,8 @@ from typing import Any
 from app.audit.service import AuditService
 from app.cleaning.repository import CleaningRepository
 from app.cleaning.schemas import (
+    CleaningExecuteRequest,
+    CleaningExecuteResponse,
     CleaningPreviewRequest,
     CleaningPreviewResponse,
     CleaningRecipeCreateRequest,
@@ -15,6 +17,7 @@ from app.cleaning.schemas import (
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.datasets.service import Dataset, DatasetService, dataset_service
+from app.imports.schemas import ImportFieldPreview
 from app.models.cleaning import CleaningRecipe as CleaningRecipeModel
 from app.models.cleaning import CleaningStep as CleaningStepModel
 
@@ -147,6 +150,51 @@ class CleaningService:
             rows=cleaned_rows,
         )
 
+    def execute_recipe(
+        self,
+        *,
+        recipe_id: str,
+        payload: CleaningExecuteRequest,
+    ) -> CleaningExecuteResponse:
+        recipe = self.get_recipe(recipe_id)
+        dataset, rows = self.datasets.list_dataset_rows(recipe.source_dataset_id)
+        if dataset.project_id != recipe.project_id:
+            raise AppError("Dataset not found in project", "dataset_not_found", 404)
+
+        step_requests = [
+            CleaningStepRequest(
+                operation=step.operation,
+                order=step.order,
+                config=step.config,
+            )
+            for step in recipe.steps
+        ]
+        validated_steps = self._validate_steps(step_requests, dataset=dataset)
+        cleaned_rows = apply_cleaning_steps(rows, validated_steps)
+        fields = derive_fields(
+            source_fields=dataset.fields,
+            steps=validated_steps,
+            rows=cleaned_rows,
+        )
+        derived_dataset = self.datasets.create_derived_dataset(
+            project_id=recipe.project_id,
+            name=payload.output_name,
+            source_dataset_id=recipe.source_dataset_id,
+            fields=fields,
+            rows=drop_system_row_ids(cleaned_rows),
+            lineage_transform_type="cleaning_recipe_execution",
+            lineage_transform_id=recipe.id,
+        )
+        self._record_recipe_execution(recipe=recipe, derived_dataset_id=derived_dataset.id)
+
+        return CleaningExecuteResponse(
+            recipe_id=recipe.id,
+            source_dataset_id=recipe.source_dataset_id,
+            derived_dataset_id=derived_dataset.id,
+            derived_dataset_name=derived_dataset.name,
+            row_count=derived_dataset.row_count,
+        )
+
     def _model_to_response(self, model: CleaningRecipeModel) -> CleaningRecipeResponse:
         steps = [
             CleaningStepResponse(
@@ -230,6 +278,36 @@ class CleaningService:
             target_type="cleaning_recipe",
             target_id=recipe.id,
             transform_type="cleaning_recipe",
+            transform_id=recipe.id,
+        )
+
+    def _record_recipe_execution(
+        self,
+        *,
+        recipe: CleaningRecipeResponse,
+        derived_dataset_id: str,
+    ) -> None:
+        if self.audit is None:
+            return
+
+        self.audit.record_operation(
+            action="cleaning.recipe_executed",
+            project_id=recipe.project_id,
+            resource_type="cleaning_recipe",
+            resource_id=recipe.id,
+            detail={
+                "source_dataset_id": recipe.source_dataset_id,
+                "derived_dataset_id": derived_dataset_id,
+                "step_count": len(recipe.steps),
+            },
+        )
+        self.audit.record_lineage(
+            project_id=recipe.project_id,
+            source_type="cleaning_recipe",
+            source_id=recipe.id,
+            target_type="dataset",
+            target_id=derived_dataset_id,
+            transform_type="cleaning_recipe_execution",
             transform_id=recipe.id,
         )
 
@@ -327,6 +405,62 @@ def infer_preview_fields(*, dataset: Dataset, rows: list[dict[str, object | None
     if rows:
         return list(rows[0].keys())
     return ["_das_row_id", *[field.name for field in dataset.fields]]
+
+
+def derive_fields(
+    *,
+    source_fields: list[ImportFieldPreview],
+    steps: list[CleaningStepRequest],
+    rows: list[dict[str, object | None]],
+) -> list[ImportFieldPreview]:
+    fields = [
+        ImportFieldPreview(
+            name=field.name,
+            inferred_type=field.inferred_type,
+            nullable=field.nullable,
+            order=field.order,
+        )
+        for field in source_fields
+    ]
+
+    for step in steps:
+        if step.operation == "rename_field":
+            source = require_string_config(step, "source_field")
+            target = require_string_config(step, "target_field")
+            fields = [
+                field.model_copy(update={"name": target}) if field.name == source else field
+                for field in fields
+            ]
+        elif step.operation == "fill_null":
+            field_name = require_string_config(step, "field")
+            fields = [
+                field.model_copy(update={"nullable": False}) if field.name == field_name else field
+                for field in fields
+            ]
+
+    row_field_names = list(rows[0].keys()) if rows else []
+    output_field_names = [
+        field_name for field_name in row_field_names if field_name != "_das_row_id"
+    ]
+    if output_field_names:
+        fields_by_name = {field.name: field for field in fields}
+        fields = [
+            fields_by_name[field_name].model_copy(update={"order": order})
+            for order, field_name in enumerate(output_field_names)
+            if field_name in fields_by_name
+        ]
+    else:
+        fields = [field.model_copy(update={"order": order}) for order, field in enumerate(fields)]
+
+    return fields
+
+
+def drop_system_row_ids(
+    rows: list[dict[str, object | None]],
+) -> list[dict[str, object | None]]:
+    return [
+        {field: value for field, value in row.items() if field != "_das_row_id"} for row in rows
+    ]
 
 
 cleaning_service = CleaningService()

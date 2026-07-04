@@ -59,3 +59,15 @@ class CleaningPreviewResponse(BaseModel):
     total_rows: int
     fields: list[str]
     rows: list[dict[str, object | None]]
+
+
+class CleaningExecuteRequest(BaseModel):
+    output_name: str = Field(min_length=1, max_length=120)
+
+
+class CleaningExecuteResponse(BaseModel):
+    recipe_id: str
+    source_dataset_id: str
+    derived_dataset_id: str
+    derived_dataset_name: str
+    row_count: int

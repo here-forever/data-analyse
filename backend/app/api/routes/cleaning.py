@@ -9,6 +9,8 @@ from app.auth.dependencies import get_current_user
 from app.auth.service import User
 from app.cleaning.repository import CleaningRepository
 from app.cleaning.schemas import (
+    CleaningExecuteRequest,
+    CleaningExecuteResponse,
     CleaningPreviewRequest,
     CleaningPreviewResponse,
     CleaningRecipeCreateRequest,
@@ -27,8 +29,8 @@ def get_cleaning_service(
     session: Annotated[Session, Depends(get_db_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> CleaningService:
-    datasets = DatasetService(DatasetRepository(session))
     audit = AuditService(AuditRepository(session), actor_id=current_user.id)
+    datasets = DatasetService(DatasetRepository(session), audit=audit)
     return CleaningService(CleaningRepository(session), datasets=datasets, audit=audit)
 
 
@@ -66,3 +68,12 @@ def preview_cleaning(
     cleaning: Annotated[CleaningService, Depends(get_cleaning_service)],
 ) -> CleaningPreviewResponse:
     return cleaning.preview(payload)
+
+
+@router.post("/recipes/{recipe_id}/execute", response_model=CleaningExecuteResponse)
+def execute_recipe(
+    recipe_id: str,
+    payload: CleaningExecuteRequest,
+    cleaning: Annotated[CleaningService, Depends(get_cleaning_service)],
+) -> CleaningExecuteResponse:
+    return cleaning.execute_recipe(recipe_id=recipe_id, payload=payload)

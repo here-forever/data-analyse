@@ -81,3 +81,14 @@ class DatasetRepository:
             page=page,
             page_size=page_size,
         )
+
+    def list_rows(
+        self,
+        *,
+        table_name: str,
+        fields: list[ImportFieldPreview],
+    ) -> list[dict[str, object | None]]:
+        return DatasetMaterializer(self.session).list_rows(
+            table_name=table_name,
+            fields=fields,
+        )

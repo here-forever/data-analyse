@@ -189,3 +189,98 @@ def test_cleaning_preview_rejects_unknown_field(client: TestClient) -> None:
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "invalid_cleaning_step"
+
+
+def test_execute_cleaning_recipe_materializes_derived_dataset(client: TestClient) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+    dataset = create_dataset(client, headers, project_id)
+
+    recipe_response = client.post(
+        "/api/cleaning/recipes",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "source_dataset_id": dataset["id"],
+            "name": "Executable cleanup",
+            "description": None,
+            "steps": [
+                {
+                    "operation": "fill_null",
+                    "order": 0,
+                    "config": {"field": "region", "value": "Unknown"},
+                },
+                {
+                    "operation": "deduplicate",
+                    "order": 1,
+                    "config": {"fields": ["customer", "region", "amount"]},
+                },
+                {
+                    "operation": "rename_field",
+                    "order": 2,
+                    "config": {"source_field": "amount", "target_field": "sales_amount"},
+                },
+            ],
+        },
+    )
+    assert recipe_response.status_code == 201
+    recipe = recipe_response.json()
+
+    execute_response = client.post(
+        f"/api/cleaning/recipes/{recipe['id']}/execute",
+        headers=headers,
+        json={"output_name": "Customers Cleaned"},
+    )
+
+    assert execute_response.status_code == 200
+    execution = execute_response.json()
+    assert execution["recipe_id"] == recipe["id"]
+    assert execution["source_dataset_id"] == dataset["id"]
+    assert execution["derived_dataset_name"] == "Customers Cleaned"
+    assert execution["row_count"] == 2
+
+    derived_response = client.get(
+        f"/api/datasets/{execution['derived_dataset_id']}",
+        headers=headers,
+    )
+    assert derived_response.status_code == 200
+    derived = derived_response.json()
+    assert derived["name"] == "Customers Cleaned"
+    assert [field["name"] for field in derived["fields"]] == [
+        "customer",
+        "region",
+        "sales_amount",
+    ]
+    assert derived["source_preview_id"] == ""
+
+    preview_response = client.get(
+        f"/api/datasets/{execution['derived_dataset_id']}/preview",
+        headers=headers,
+        params={"page": 1, "page_size": 20},
+    )
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["total_rows"] == 2
+    assert preview["rows"][0]["region"] == "Unknown"
+    assert preview["rows"][0]["sales_amount"] == 19.5
+    assert "amount" not in preview["rows"][0]
+
+    session = next(client.app.dependency_overrides[get_db_session]())
+    try:
+        execution_log = session.scalar(
+            select(OperationLogModel).where(OperationLogModel.action == "cleaning.recipe_executed")
+        )
+        lineage_edges = list(
+            session.scalars(
+                select(LineageEdgeModel).where(
+                    LineageEdgeModel.target_id == execution["derived_dataset_id"]
+                )
+            )
+        )
+    finally:
+        session.close()
+
+    assert execution_log is not None
+    assert execution_log.detail["derived_dataset_id"] == execution["derived_dataset_id"]
+    assert {edge.source_type for edge in lineage_edges} == {"dataset", "cleaning_recipe"}
+    assert {edge.source_id for edge in lineage_edges} == {dataset["id"], recipe["id"]}

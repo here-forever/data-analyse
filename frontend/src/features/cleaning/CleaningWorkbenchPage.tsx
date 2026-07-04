@@ -4,17 +4,20 @@ import {
   Eye,
   FileSliders,
   ListFilter,
+  Play,
   Plus,
   RefreshCcw,
   Save,
   Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   createCleaningRecipe,
+  executeCleaningRecipe,
   previewCleaning,
+  type CleaningExecution,
   type CleaningOperation,
   type CleaningPreview,
   type CleaningStepPayload,
@@ -54,6 +57,7 @@ export function CleaningWorkbenchPage() {
     initialDatasetId,
   );
   const [recipeName, setRecipeName] = useState("Cleaning recipe");
+  const [outputName, setOutputName] = useState("Cleaned dataset");
   const [draftSteps, setDraftSteps] = useState<DraftStep[]>([]);
   const [latestPreview, setLatestPreview] = useState<CleaningPreview | null>(
     null,
@@ -113,6 +117,17 @@ export function CleaningWorkbenchPage() {
     },
   });
 
+  const executeMutation = useMutation({
+    mutationFn: () => {
+      if (!saveMutation.data) {
+        throw new Error("Save the cleaning recipe before executing it");
+      }
+      return executeCleaningRecipe(saveMutation.data.id, {
+        output_name: outputName.trim(),
+      });
+    },
+  });
+
   function submitProject(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmittedProjectId(projectId.trim());
@@ -139,6 +154,7 @@ export function CleaningWorkbenchPage() {
     ]);
     setLatestPreview(null);
     saveMutation.reset();
+    executeMutation.reset();
   }
 
   function updateStep(stepId: string, patch: Partial<DraftStep>) {
@@ -149,12 +165,14 @@ export function CleaningWorkbenchPage() {
     );
     setLatestPreview(null);
     saveMutation.reset();
+    executeMutation.reset();
   }
 
   function removeStep(stepId: string) {
     setDraftSteps((current) => current.filter((step) => step.id !== stepId));
     setLatestPreview(null);
     saveMutation.reset();
+    executeMutation.reset();
   }
 
   const canRun =
@@ -166,6 +184,10 @@ export function CleaningWorkbenchPage() {
     recipeName.trim().length > 0 &&
     draftSteps.length > 0 &&
     !saveMutation.isPending;
+  const canExecute =
+    Boolean(saveMutation.data) &&
+    outputName.trim().length > 0 &&
+    !executeMutation.isPending;
 
   return (
     <section className="space-y-5">
@@ -219,20 +241,30 @@ export function CleaningWorkbenchPage() {
         <RecipeBuilder
           dataset={selectedDataset}
           recipeName={recipeName}
+          outputName={outputName}
           steps={draftSteps}
           onRecipeNameChange={setRecipeName}
+          onOutputNameChange={(value) => {
+            setOutputName(value);
+            executeMutation.reset();
+          }}
           onAddStep={addStep}
           onUpdateStep={updateStep}
           onRemoveStep={removeStep}
           onPreview={() => previewMutation.mutate()}
           onSave={() => saveMutation.mutate()}
+          onExecute={() => executeMutation.mutate()}
           canRun={canRun}
           canSave={canSave}
+          canExecute={canExecute}
           isPreviewing={previewMutation.isPending}
           isSaving={saveMutation.isPending}
+          isExecuting={executeMutation.isPending}
           previewError={previewMutation.error}
           saveError={saveMutation.error}
+          executeError={executeMutation.error}
           savedRecipeName={saveMutation.data?.name}
+          execution={executeMutation.data}
         />
 
         <PreviewPanel
@@ -307,37 +339,51 @@ function DatasetChooser({
 function RecipeBuilder({
   dataset,
   recipeName,
+  outputName,
   steps,
   onRecipeNameChange,
+  onOutputNameChange,
   onAddStep,
   onUpdateStep,
   onRemoveStep,
   onPreview,
   onSave,
+  onExecute,
   canRun,
   canSave,
+  canExecute,
   isPreviewing,
   isSaving,
+  isExecuting,
   previewError,
   saveError,
+  executeError,
   savedRecipeName,
+  execution,
 }: {
   dataset: Dataset | null;
   recipeName: string;
+  outputName: string;
   steps: DraftStep[];
   onRecipeNameChange: (value: string) => void;
+  onOutputNameChange: (value: string) => void;
   onAddStep: (operation: CleaningOperation) => void;
   onUpdateStep: (stepId: string, patch: Partial<DraftStep>) => void;
   onRemoveStep: (stepId: string) => void;
   onPreview: () => void;
   onSave: () => void;
+  onExecute: () => void;
   canRun: boolean;
   canSave: boolean;
+  canExecute: boolean;
   isPreviewing: boolean;
   isSaving: boolean;
+  isExecuting: boolean;
   previewError: Error | null;
   saveError: Error | null;
+  executeError: Error | null;
   savedRecipeName?: string;
+  execution?: CleaningExecution;
 }) {
   const fieldNames = dataset?.fields.map((field) => field.name) ?? [];
 
@@ -357,6 +403,18 @@ function RecipeBuilder({
             className="mt-2 h-10 w-full rounded-md border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
             value={recipeName}
             onChange={(event) => onRecipeNameChange(event.target.value)}
+          />
+        </label>
+
+        <label className="block">
+          <span className="text-xs font-semibold uppercase text-muted">
+            Output dataset
+          </span>
+          <input
+            aria-label="Output dataset"
+            className="mt-2 h-10 w-full rounded-md border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+            value={outputName}
+            onChange={(event) => onOutputNameChange(event.target.value)}
           />
         </label>
 
@@ -413,12 +471,39 @@ function RecipeBuilder({
           </button>
         </div>
 
+        <button
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-emerald/30 bg-white px-4 text-sm font-semibold text-emerald transition hover:bg-emerald/10 disabled:cursor-not-allowed disabled:opacity-45"
+          disabled={!canExecute}
+          onClick={onExecute}
+          type="button"
+        >
+          <Play className="h-4 w-4" />
+          {isExecuting ? "Executing..." : "Execute to dataset"}
+        </button>
+
         {previewError ? (
           <Alert tone="error" message={previewError.message} />
         ) : null}
         {saveError ? <Alert tone="error" message={saveError.message} /> : null}
+        {executeError ? (
+          <Alert tone="error" message={executeError.message} />
+        ) : null}
         {savedRecipeName ? (
           <Alert tone="success" message={`Saved ${savedRecipeName}`} />
+        ) : null}
+        {execution ? (
+          <div className="space-y-3">
+            <Alert
+              tone="success"
+              message={`Materialized ${execution.derived_dataset_name} (${execution.row_count} rows)`}
+            />
+            <Link
+              className="inline-flex h-10 w-full items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-white transition hover:bg-blue-700"
+              to={`/datasets?project_id=${encodeURIComponent(dataset?.project_id ?? "")}&dataset_id=${encodeURIComponent(execution.derived_dataset_id)}`}
+            >
+              Open derived dataset
+            </Link>
+          </div>
         ) : null}
       </div>
     </div>
