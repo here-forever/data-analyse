@@ -75,3 +75,17 @@ The backend skeleton provides:
 - Pytest test suite.
 
 Backend commands are documented in `backend/README.md`.
+
+## Frontend Skeleton
+
+The frontend skeleton provides:
+
+- Vite + React + TypeScript setup.
+- React Router app shell.
+- TanStack Query provider.
+- Zustand workspace state store.
+- Typed API client helper.
+- Tailwind CSS design tokens.
+- Vitest and Testing Library tests.
+
+Frontend commands are documented in `frontend/README.md`.

@@ -68,3 +68,37 @@ Run backend dev server:
 ```powershell
 backend\.venv\Scripts\python -m uvicorn app.main:app --app-dir backend --reload
 ```
+
+## Frontend Commands
+
+Install frontend dependencies:
+
+```powershell
+cd frontend
+npm.cmd install
+cd ..
+```
+
+Run frontend tests:
+
+```powershell
+cd frontend
+npm.cmd test
+cd ..
+```
+
+Run frontend dev server:
+
+```powershell
+cd frontend
+npm.cmd run dev
+cd ..
+```
+
+Build frontend:
+
+```powershell
+cd frontend
+npm.cmd run build
+cd ..
+```
