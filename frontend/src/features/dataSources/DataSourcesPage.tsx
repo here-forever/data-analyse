@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -21,8 +21,41 @@ import {
   type UploadRecord,
   type UploadStatus,
 } from "../imports/api";
+import {
+  createExternalDatabaseConnection,
+  listExternalDatabaseConnections,
+  testExternalDatabaseConnection,
+  type DatabaseType,
+  type ExternalConnectionStatus,
+  type ExternalDatabaseConnection,
+  type ExternalDatabaseConnectionCreatePayload,
+} from "./api";
 
 const DEFAULT_PROJECT_ID = "prj_demo";
+const DEFAULT_DATABASE_PORTS: Record<DatabaseType, string> = {
+  mysql: "3306",
+  postgresql: "5432",
+};
+
+interface ExternalConnectionFormState {
+  databaseName: string;
+  databaseType: DatabaseType;
+  host: string;
+  name: string;
+  password: string;
+  port: string;
+  username: string;
+}
+
+const DEFAULT_EXTERNAL_CONNECTION_FORM: ExternalConnectionFormState = {
+  databaseName: "",
+  databaseType: "postgresql",
+  host: "",
+  name: "",
+  password: "",
+  port: DEFAULT_DATABASE_PORTS.postgresql,
+  username: "",
+};
 
 export function DataSourcesPage() {
   const [projectId, setProjectId] = useState(DEFAULT_PROJECT_ID);
@@ -126,6 +159,7 @@ export function DataSourcesPage() {
 
         <div className="space-y-5">
           <LocalFilePanel projectId={submittedProjectId} uploads={uploads} />
+          <ExternalDatabasePanel projectId={submittedProjectId} />
           <UploadRecordPanel
             error={uploadsQuery.error}
             isLoading={uploadsQuery.isLoading || uploadsQuery.isFetching}
@@ -156,10 +190,10 @@ function SourceTypePanel({ projectId }: { projectId: string }) {
     {
       title: "External database",
       description:
-        "PostgreSQL/MySQL read-only connections are the next connector milestone.",
+        "PostgreSQL/MySQL read-only connections with saved metadata and test status.",
       icon: Server,
       tone: "emerald" as const,
-      state: "Next",
+      state: "MVP",
       href: null,
     },
     {
@@ -282,6 +316,378 @@ function LocalFilePanel({
         </div>
       </div>
     </div>
+  );
+}
+
+function ExternalDatabasePanel({ projectId }: { projectId: string }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState<ExternalConnectionFormState>(
+    DEFAULT_EXTERNAL_CONNECTION_FORM,
+  );
+
+  const connectionsQuery = useQuery({
+    queryKey: ["external-database-connections", projectId],
+    queryFn: () => listExternalDatabaseConnections(projectId),
+    enabled: projectId.trim().length > 0,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (payload: ExternalDatabaseConnectionCreatePayload) =>
+      createExternalDatabaseConnection(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["external-database-connections", projectId],
+      });
+      setForm((current) => ({
+        ...DEFAULT_EXTERNAL_CONNECTION_FORM,
+        databaseType: current.databaseType,
+        port: DEFAULT_DATABASE_PORTS[current.databaseType],
+      }));
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: testExternalDatabaseConnection,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["external-database-connections", projectId],
+      });
+    },
+  });
+
+  const connections = useMemo(
+    () => connectionsQuery.data?.items ?? [],
+    [connectionsQuery.data?.items],
+  );
+  const portNumber = Number(form.port);
+  const isValidPort =
+    Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
+  const canSave =
+    projectId.trim().length > 0 &&
+    form.name.trim().length > 0 &&
+    form.host.trim().length > 0 &&
+    form.databaseName.trim().length > 0 &&
+    form.username.trim().length > 0 &&
+    form.password.length > 0 &&
+    isValidPort &&
+    !createMutation.isPending;
+
+  function updateField<K extends keyof ExternalConnectionFormState>(
+    key: K,
+    value: ExternalConnectionFormState[K],
+  ) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateDatabaseType(databaseType: DatabaseType) {
+    setForm((current) => ({
+      ...current,
+      databaseType,
+      port: DEFAULT_DATABASE_PORTS[databaseType],
+    }));
+  }
+
+  function submitConnection(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSave) {
+      return;
+    }
+
+    createMutation.mutate({
+      database_name: form.databaseName.trim(),
+      database_type: form.databaseType,
+      host: form.host.trim(),
+      name: form.name.trim(),
+      password: form.password,
+      port: portNumber,
+      project_id: projectId.trim(),
+      read_only: true,
+      username: form.username.trim(),
+    });
+  }
+
+  return (
+    <div className="overflow-hidden rounded-md border border-line bg-panel shadow-panel">
+      <PanelHeader icon={Server} title="External database connections" />
+      <div className="grid gap-4 p-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
+        <form
+          className="space-y-4 rounded-md border border-emerald/20 bg-emerald/10 p-4"
+          onSubmit={submitConnection}
+        >
+          <div>
+            <p className="text-sm font-semibold text-ink">
+              Save read-only connection
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Store connection metadata, keep the password hidden, and verify
+              the database can answer a read-only test query.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {(["postgresql", "mysql"] as const).map((databaseType) => (
+              <button
+                key={databaseType}
+                className={[
+                  "h-9 rounded-md border px-3 text-xs font-semibold transition",
+                  form.databaseType === databaseType
+                    ? "border-emerald bg-emerald text-white shadow-sm"
+                    : "border-emerald/20 bg-white text-emerald hover:bg-emerald/10",
+                ].join(" ")}
+                onClick={() => updateDatabaseType(databaseType)}
+                type="button"
+              >
+                {databaseType === "postgresql" ? "PostgreSQL" : "MySQL"}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-1">
+            <TextInput
+              id="external-connection-name"
+              label="Connection name"
+              placeholder="Warehouse readonly"
+              value={form.name}
+              onChange={(value) => updateField("name", value)}
+            />
+            <TextInput
+              id="external-connection-host"
+              label="Host"
+              placeholder="127.0.0.1"
+              value={form.host}
+              onChange={(value) => updateField("host", value)}
+            />
+            <TextInput
+              id="external-connection-port"
+              label="Port"
+              placeholder={DEFAULT_DATABASE_PORTS[form.databaseType]}
+              value={form.port}
+              onChange={(value) => updateField("port", value)}
+            />
+            <TextInput
+              id="external-connection-database"
+              label="Database"
+              placeholder="analytics"
+              value={form.databaseName}
+              onChange={(value) => updateField("databaseName", value)}
+            />
+            <TextInput
+              id="external-connection-username"
+              label="Username"
+              placeholder="readonly_user"
+              value={form.username}
+              onChange={(value) => updateField("username", value)}
+            />
+            <TextInput
+              id="external-connection-password"
+              label="Password"
+              placeholder="Stored as secret placeholder"
+              type="password"
+              value={form.password}
+              onChange={(value) => updateField("password", value)}
+            />
+          </div>
+
+          <label className="flex items-start gap-2 rounded-md border border-emerald/20 bg-white px-3 py-2 text-xs leading-5 text-muted">
+            <input
+              checked
+              className="mt-0.5 h-4 w-4 rounded border-line text-emerald"
+              readOnly
+              type="checkbox"
+            />
+            Read-only connection policy is enforced for this MVP.
+          </label>
+
+          {!isValidPort ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              Port must be an integer between 1 and 65535.
+            </p>
+          ) : null}
+
+          <button
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!canSave}
+            type="submit"
+          >
+            <Database className="h-4 w-4" />
+            {createMutation.isPending ? "Saving..." : "Save connection"}
+          </button>
+
+          {createMutation.data ? (
+            <Alert
+              message={`Saved ${createMutation.data.name}. Run a connection test before importing tables.`}
+              tone="success"
+            />
+          ) : null}
+          {createMutation.error ? (
+            <Alert message={createMutation.error.message} tone="error" />
+          ) : null}
+        </form>
+
+        <ExternalConnectionList
+          connections={connections}
+          error={connectionsQuery.error}
+          isLoading={connectionsQuery.isLoading || connectionsQuery.isFetching}
+          testError={testMutation.error}
+          testResult={testMutation.data}
+          testingConnectionId={
+            testMutation.isPending ? testMutation.variables : undefined
+          }
+          onTest={(connectionId) => testMutation.mutate(connectionId)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ExternalConnectionList({
+  connections,
+  isLoading,
+  error,
+  testingConnectionId,
+  testResult,
+  testError,
+  onTest,
+}: {
+  connections: ExternalDatabaseConnection[];
+  isLoading: boolean;
+  error: Error | null;
+  testingConnectionId?: string;
+  testResult?: { ok: boolean; message: string };
+  testError: Error | null;
+  onTest: (connectionId: string) => void;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-line bg-white">
+      <div className="flex flex-col gap-2 border-b border-line px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-ink">Saved connections</p>
+          <p className="mt-1 text-xs text-muted">
+            PostgreSQL/MySQL entries are project-scoped and password-free in
+            responses.
+          </p>
+        </div>
+        <span className="w-fit rounded-full bg-cyan/10 px-2.5 py-1 text-xs font-semibold text-cyan">
+          {connections.length.toLocaleString()} connections
+        </span>
+      </div>
+
+      {testResult ? (
+        <div
+          className={[
+            "border-b border-line px-4 py-3 text-sm",
+            testResult.ok
+              ? "bg-emerald/10 text-emerald"
+              : "bg-red-50 text-red-700",
+          ].join(" ")}
+        >
+          {testResult.message}
+        </div>
+      ) : null}
+      {testError ? (
+        <div className="border-b border-line bg-red-50 px-4 py-3 text-sm text-red-700">
+          {testError.message}
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <StateMessage title="Loading external database connections" />
+      ) : error ? (
+        <StateMessage
+          title="Could not load database connections"
+          tone="error"
+        />
+      ) : connections.length === 0 ? (
+        <StateMessage title="No external database connections yet" />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-muted">
+              <tr>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Connection
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Endpoint
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Status
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Updated
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {connections.map((connection) => (
+                <ExternalConnectionRow
+                  key={connection.id}
+                  connection={connection}
+                  isTesting={testingConnectionId === connection.id}
+                  onTest={onTest}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExternalConnectionRow({
+  connection,
+  isTesting,
+  onTest,
+}: {
+  connection: ExternalDatabaseConnection;
+  isTesting: boolean;
+  onTest: (connectionId: string) => void;
+}) {
+  return (
+    <tr className="align-top hover:bg-slate-50">
+      <td className="border-b border-line px-4 py-3">
+        <p className="max-w-xs truncate font-semibold text-ink">
+          {connection.name}
+        </p>
+        <p className="mt-1 font-mono text-xs text-muted">{connection.id}</p>
+        <p className="mt-2 text-xs uppercase text-muted">
+          {connection.database_type === "postgresql" ? "PostgreSQL" : "MySQL"}{" "}
+          readonly
+        </p>
+      </td>
+      <td className="border-b border-line px-4 py-3">
+        <p className="max-w-sm truncate font-mono text-xs text-ink">
+          {connection.host}:{connection.port}/{connection.database_name}
+        </p>
+        <p className="mt-1 text-xs text-muted">{connection.username}</p>
+      </td>
+      <td className="border-b border-line px-4 py-3">
+        <ExternalConnectionStatusChip status={connection.status} />
+        {connection.last_error ? (
+          <p className="mt-2 max-w-sm rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
+            {connection.last_error}
+          </p>
+        ) : null}
+      </td>
+      <td className="border-b border-line px-4 py-3 text-xs text-muted">
+        {formatDate(connection.updated_at)}
+      </td>
+      <td className="border-b border-line px-4 py-3">
+        <button
+          className="inline-flex h-8 items-center gap-2 rounded-md border border-emerald/30 bg-emerald/10 px-3 text-xs font-semibold text-emerald transition hover:bg-emerald/20 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={isTesting}
+          onClick={() => onTest(connection.id)}
+          type="button"
+        >
+          <RefreshCcw className="h-3.5 w-3.5" />
+          {isTesting ? "Testing" : "Test"}
+        </button>
+      </td>
+    </tr>
   );
 }
 
@@ -474,6 +880,91 @@ function UploadStatusChip({ status }: { status: UploadStatus }) {
       <Icon className="h-3.5 w-3.5" />
       {meta.label}
     </span>
+  );
+}
+
+function ExternalConnectionStatusChip({
+  status,
+}: {
+  status: ExternalConnectionStatus;
+}) {
+  const meta = {
+    available: {
+      label: "Available",
+      icon: CheckCircle2,
+      className: "border-emerald/20 bg-emerald/10 text-emerald",
+    },
+    failed: {
+      label: "Failed",
+      icon: AlertTriangle,
+      className: "border-red-200 bg-red-50 text-red-700",
+    },
+    untested: {
+      label: "Untested",
+      icon: Clock3,
+      className: "border-amber/20 bg-amber/10 text-amber",
+    },
+  }[status];
+  const Icon = meta.icon;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${meta.className}`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {meta.label}
+    </span>
+  );
+}
+
+function TextInput({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: "password" | "text";
+}) {
+  return (
+    <label className="block" htmlFor={id}>
+      <span className="text-xs font-semibold uppercase text-muted">
+        {label}
+      </span>
+      <input
+        id={id}
+        className="mt-2 h-10 w-full rounded-md border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+        placeholder={placeholder}
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function Alert({
+  tone,
+  message,
+}: {
+  tone: "error" | "success";
+  message: string;
+}) {
+  const className =
+    tone === "error"
+      ? "border-red-200 bg-red-50 text-red-700"
+      : "border-emerald/20 bg-white text-emerald";
+
+  return (
+    <div className={`rounded-md border px-3 py-3 text-sm ${className}`}>
+      {message}
+    </div>
   );
 }
 

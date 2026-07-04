@@ -10,6 +10,7 @@ from app.auth.service import auth_service
 from app.cleaning.service import cleaning_service
 from app.core.config import get_settings
 from app.core.database import Base, get_db_session, import_models
+from app.data_sources.service import data_source_service
 from app.data_views.service import data_view_service
 from app.datasets.service import dataset_service
 from app.imports.service import import_service
@@ -29,6 +30,7 @@ def reset_development_services() -> None:
     dataset_service.reset()
     cleaning_service.reset()
     data_view_service.reset()
+    data_source_service.reset()
     task_service.reset()
     visualization_service.reset()
 

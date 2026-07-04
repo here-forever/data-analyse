@@ -1,5 +1,6 @@
 from app.models.audit import LineageEdge, OperationLog
 from app.models.cleaning import CleaningRecipe, CleaningStep
+from app.models.data_source import ExternalDatabaseConnection
 from app.models.data_view import (
     ChartDefinition,
     DashboardDefinition,
@@ -25,6 +26,7 @@ __all__ = [
     "DashboardDefinition",
     "CleaningRecipe",
     "CleaningStep",
+    "ExternalDatabaseConnection",
     "FileImportPreview",
     "LineageEdge",
     "OperationLog",

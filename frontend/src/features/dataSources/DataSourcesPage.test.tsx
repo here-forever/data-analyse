@@ -1,4 +1,5 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { renderWithProviders } from "../../test/test-utils";
@@ -78,6 +79,30 @@ describe("DataSourcesPage", () => {
         );
       }
 
+      if (url.includes("/data-sources/external-databases")) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              {
+                id: "src_1",
+                project_id: "prj_demo",
+                name: "Warehouse readonly",
+                database_type: "postgresql",
+                host: "warehouse.local",
+                port: 5432,
+                database_name: "analytics",
+                username: "readonly_user",
+                read_only: true,
+                status: "available",
+                last_error: null,
+                created_at: "2026-07-04T10:00:00Z",
+                updated_at: "2026-07-04T10:01:00Z",
+              },
+            ],
+          }),
+        );
+      }
+
       return Promise.resolve(jsonResponse({}));
     });
 
@@ -103,7 +128,108 @@ describe("DataSourcesPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Sales Orders")).toBeInTheDocument();
     expect(screen.getByText("External database")).toBeInTheDocument();
+    expect(screen.getByText("Warehouse readonly")).toBeInTheDocument();
+    expect(screen.getAllByText("Available").length).toBeGreaterThan(0);
     expect(screen.getByText("API source")).toBeInTheDocument();
+  });
+
+  test("saves and tests an external database connection", async () => {
+    fetchMock.mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+
+        if (url.includes("/imports/uploads")) {
+          return Promise.resolve(jsonResponse({ items: [] }));
+        }
+
+        if (url.includes("/datasets")) {
+          return Promise.resolve(jsonResponse({ items: [] }));
+        }
+
+        if (
+          url.endsWith("/data-sources/external-databases") &&
+          init?.method === "POST"
+        ) {
+          expect(init.body).toContain('"database_type":"mysql"');
+          expect(init.body).toContain('"read_only":true');
+          expect(init.body).toContain('"password":"secret-password"');
+          return Promise.resolve(
+            jsonResponse({
+              ...connectionPayload,
+              status: "untested",
+              last_error: null,
+            }),
+          );
+        }
+
+        if (
+          url.endsWith("/data-sources/external-databases/src_1/test") &&
+          init?.method === "POST"
+        ) {
+          return Promise.resolve(
+            jsonResponse({
+              ok: true,
+              message: "Read-only connection test succeeded",
+              connection: {
+                ...connectionPayload,
+                status: "available",
+                last_error: null,
+              },
+            }),
+          );
+        }
+
+        if (url.includes("/data-sources/external-databases")) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  ...connectionPayload,
+                  status: "untested",
+                  last_error: null,
+                },
+              ],
+            }),
+          );
+        }
+
+        return Promise.resolve(jsonResponse({}));
+      },
+    );
+    const user = userEvent.setup();
+
+    renderWithProviders(<DataSourcesPage />);
+
+    await screen.findByText("Warehouse readonly");
+    await user.click(screen.getByRole("button", { name: "MySQL" }));
+    await user.type(
+      screen.getByLabelText("Connection name"),
+      "Warehouse readonly",
+    );
+    await user.type(screen.getByLabelText("Host"), "mysql.local");
+    await user.clear(screen.getByLabelText("Database"));
+    await user.type(screen.getByLabelText("Database"), "analytics");
+    await user.type(screen.getByLabelText("Username"), "readonly_user");
+    await user.type(screen.getByLabelText("Password"), "secret-password");
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    expect(
+      await screen.findByText(
+        "Saved Warehouse readonly. Run a connection test before importing tables.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Test" }));
+
+    expect(
+      await screen.findByText("Read-only connection test succeeded"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/api/data-sources/external-databases/src_1/test",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
   });
 });
 
@@ -113,3 +239,17 @@ function jsonResponse(payload: unknown): Response {
     json: async () => payload,
   } as Response;
 }
+
+const connectionPayload = {
+  id: "src_1",
+  project_id: "prj_demo",
+  name: "Warehouse readonly",
+  database_type: "mysql",
+  host: "mysql.local",
+  port: 3306,
+  database_name: "analytics",
+  username: "readonly_user",
+  read_only: true,
+  created_at: "2026-07-04T10:00:00Z",
+  updated_at: "2026-07-04T10:01:00Z",
+};
