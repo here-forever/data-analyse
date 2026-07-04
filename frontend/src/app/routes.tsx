@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { DatasetPage } from "../features/datasets/DatasetPage";
 import { PlaceholderPage } from "./PlaceholderPage";
 
 export const routePlaceholders: Record<string, ReactNode> = {
@@ -21,12 +22,7 @@ export const routePlaceholders: Record<string, ReactNode> = {
       description="Upload files, preview fields, confirm types, and create formal datasets."
     />
   ),
-  "/datasets": (
-    <PlaceholderPage
-      title="Datasets"
-      description="Inspect formal datasets, fields, source metadata, and lineage entries."
-    />
-  ),
+  "/datasets": <DatasetPage />,
   "/sql": (
     <PlaceholderPage
       title="SQL workspace"

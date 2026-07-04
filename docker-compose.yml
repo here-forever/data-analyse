@@ -71,6 +71,7 @@ services:
       dockerfile: docker/frontend.Dockerfile
     environment:
       VITE_API_BASE_URL: http://127.0.0.1:8000/api
+      VITE_DEV_ACCESS_TOKEN: local-dev-token-usr_admin
     ports:
       - "5173:5173"
     volumes:

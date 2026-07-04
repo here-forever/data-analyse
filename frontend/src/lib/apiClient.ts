@@ -13,14 +13,27 @@ type Fetcher = typeof fetch;
 export interface ApiClientOptions {
   baseUrl: string;
   fetcher?: Fetcher;
+  accessToken?: string;
 }
 
 export interface ApiClient {
-  get<TResponse>(path: string): Promise<TResponse>;
+  get<TResponse>(path: string, params?: Record<string, string | number | boolean | null | undefined>): Promise<TResponse>;
 }
 
-function joinUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`;
+function joinUrl(
+  baseUrl: string,
+  path: string,
+  params?: Record<string, string | number | boolean | null | undefined>,
+): string {
+  const url = new URL(`${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`);
+
+  Object.entries(params ?? {}).forEach(([key, value]) => {
+    if (value !== null && value !== undefined) {
+      url.searchParams.set(key, String(value));
+    }
+  });
+
+  return url.toString();
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
@@ -32,11 +45,21 @@ async function readErrorMessage(response: Response): Promise<string> {
   }
 }
 
-export function createApiClient({ baseUrl, fetcher = fetch }: ApiClientOptions): ApiClient {
+export function createApiClient({
+  baseUrl,
+  fetcher = fetch,
+  accessToken,
+}: ApiClientOptions): ApiClient {
   return {
-    async get<TResponse>(path: string): Promise<TResponse> {
-      const response = await fetcher(joinUrl(baseUrl, path), {
-        headers: { Accept: "application/json" },
+    async get<TResponse>(
+      path: string,
+      params?: Record<string, string | number | boolean | null | undefined>,
+    ): Promise<TResponse> {
+      const response = await fetcher(joinUrl(baseUrl, path, params), {
+        headers: {
+          Accept: "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         method: "GET",
       });
 
@@ -51,4 +74,8 @@ export function createApiClient({ baseUrl, fetcher = fetch }: ApiClientOptions):
 
 export const apiClient = createApiClient({
   baseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000/api",
+  accessToken:
+    import.meta.env.VITE_DEV_ACCESS_TOKEN ??
+    (import.meta.env.DEV ? "local-dev-token-usr_admin" : undefined),
+  fetcher: (...args) => fetch(...args),
 });
