@@ -196,6 +196,58 @@ describe("ImportWizardPage", () => {
       );
     });
   });
+
+  test("reopens a saved preview from route query parameters", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/imports/uploads")) {
+        return Promise.resolve(jsonResponse({ items: [] }));
+      }
+
+      if (url.endsWith("/imports/file-previews/preview_1")) {
+        return Promise.resolve(
+          jsonResponse({
+            id: "preview_1",
+            project_id: "prj_demo",
+            uploaded_file_id: "file_1",
+            upload_status: "parsed",
+            file_name: "sales.csv",
+            file_type: "csv",
+            row_count: 2,
+            fields: [
+              {
+                name: "order_id",
+                inferred_type: "integer",
+                nullable: false,
+                order: 0,
+              },
+              {
+                name: "amount",
+                inferred_type: "decimal",
+                nullable: false,
+                order: 1,
+              },
+            ],
+            sample_rows: [
+              { order_id: 1, amount: 19.5 },
+              { order_id: 2, amount: 42 },
+            ],
+          }),
+        );
+      }
+
+      return Promise.resolve(jsonResponse({}));
+    });
+
+    renderWithProviders(<ImportWizardPage />, {
+      route: "/import?project_id=prj_demo&preview_id=preview_1",
+    });
+
+    expect(await screen.findByDisplayValue("amount")).toBeInTheDocument();
+    expect(screen.getByText("19.5")).toBeInTheDocument();
+    expect(screen.getByLabelText("Dataset name")).toHaveValue("sales");
+  });
 });
 
 function jsonResponse(payload: unknown): Response {

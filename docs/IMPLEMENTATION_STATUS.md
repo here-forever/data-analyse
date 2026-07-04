@@ -93,6 +93,7 @@ Initial core tables have been modeled and migrated:
 - Tailwind CSS tokens and base styling.
 - Basic app shell and navigation.
 - Dataset workspace page with project dataset list, schema, and paged preview.
+- Data source center page for local file intake, upload outcomes, dataset bridge links, and reserved connector states.
 - Import wizard page for CSV/Excel preview and dataset creation.
 - Import wizard upload status and failure recovery hints.
 - Import wizard upload history panel with parsed/failed file records and task trace links.
@@ -105,7 +106,7 @@ Initial core tables have been modeled and migrated:
 - Task center page with project filtering, status summary, workflow coverage, and recent task table.
 - Task center retry entry controlled by backend retry eligibility, with immediate list refresh and completion feedback.
 - Task center related-resource links for datasets, data views, charts, and dashboards, with target pages reading route query parameters for selection/highlighting.
-- Placeholder pages remain only for features not yet implemented.
+- Placeholder pages remain only for features not yet implemented beyond the current data intake, dataset, cleaning, SQL, chart, dashboard, and task surfaces.
 - Frontend API client tests.
 
 ## Implemented Docker Foundation
@@ -125,8 +126,8 @@ Initial core tables have been modeled and migrated:
 - Backend health check is reachable at `http://127.0.0.1:8000/api/health`.
 - Alembic migration has been applied to Docker PostgreSQL.
 - Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, and related-resource navigation were verified through tests or API flows.
-- Backend test suite passed in Docker: 42 tests.
-- Frontend test suite passed: 23 tests.
+- Backend test suite passed locally: 45 tests.
+- Frontend test suite passed: 25 tests.
 - Frontend lint passed.
 - Frontend build previously passed and should be rerun after each UI milestone.
 
@@ -137,6 +138,7 @@ Initial core tables have been modeled and migrated:
 - Upload/import history is queryable by project and shows uploaded-file status, parse errors, and linked preview metadata when parsing succeeds.
 - Import preview stores sample rows for confirmation before formal dataset creation.
 - Parsed upload history records can restore their saved preview metadata without re-uploading the source file.
+- Data Sources now acts as the main local file intake overview and links into import previews, task traces, and formal datasets.
 - Formal dataset creation creates and populates a physical table.
 - Dataset names are unique within a project to avoid accidental overwrite-like workflows.
 - Dataset quality profiling is computed on demand from materialized rows and is not yet cached or task-backed.

@@ -11,8 +11,8 @@ import {
   XCircle,
   UploadCloud,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import type { DatasetField } from "../datasets/api";
 import {
@@ -37,13 +37,17 @@ const FIELD_TYPES: DatasetField["inferred_type"][] = [
 
 export function ImportWizardPage() {
   const queryClient = useQueryClient();
-  const [projectId, setProjectId] = useState(DEFAULT_PROJECT_ID);
+  const [searchParams] = useSearchParams();
+  const initialProjectId = searchParams.get("project_id") ?? DEFAULT_PROJECT_ID;
+  const initialPreviewId = searchParams.get("preview_id");
+  const [projectId, setProjectId] = useState(initialProjectId);
   const [submittedProjectId, setSubmittedProjectId] =
-    useState(DEFAULT_PROJECT_ID);
+    useState(initialProjectId);
   const [datasetName, setDatasetName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [fields, setFields] = useState<DatasetField[]>([]);
+  const autoOpenedPreviewIdRef = useRef<string | null>(null);
 
   const uploadsQuery = useQuery({
     queryKey: ["import-uploads", submittedProjectId],
@@ -105,6 +109,16 @@ export function ImportWizardPage() {
       previewMutation.reset();
     },
   });
+
+  useEffect(() => {
+    if (
+      initialPreviewId &&
+      autoOpenedPreviewIdRef.current !== initialPreviewId
+    ) {
+      autoOpenedPreviewIdRef.current = initialPreviewId;
+      savedPreviewMutation.mutate(initialPreviewId);
+    }
+  }, [initialPreviewId, savedPreviewMutation]);
 
   const canPreview = projectId.trim().length > 0 && selectedFile !== null;
   const canCreateDataset =

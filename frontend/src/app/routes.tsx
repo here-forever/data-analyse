@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { CleaningWorkbenchPage } from "../features/cleaning/CleaningWorkbenchPage";
+import { DataSourcesPage } from "../features/dataSources/DataSourcesPage";
 import { DataViewSourcePage } from "../features/dataViews/DataViewSourcePage";
 import { DatasetPage } from "../features/datasets/DatasetPage";
 import { ImportWizardPage } from "../features/imports/ImportWizardPage";
@@ -15,12 +16,7 @@ export const routePlaceholders: Record<string, ReactNode> = {
       description="Start from project data sources, create datasets, clean data, save reusable views, and build dashboards."
     />
   ),
-  "/data-sources": (
-    <PlaceholderPage
-      title="Data sources"
-      description="CSV, Excel, and future database/API connectors will be managed here."
-    />
-  ),
+  "/data-sources": <DataSourcesPage />,
   "/import": <ImportWizardPage />,
   "/datasets": <DatasetPage />,
   "/cleaning": <CleaningWorkbenchPage />,
