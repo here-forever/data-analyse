@@ -66,6 +66,14 @@ class VisualizationService:
                 error=error,
                 related_resource_type="data_view",
                 related_resource_id=payload.data_view_id,
+                retry_payload={
+                    "operation": "chart_save",
+                    "project_id": payload.project_id,
+                    "data_view_id": payload.data_view_id,
+                    "name": payload.name,
+                    "chart_type": payload.chart_type,
+                    "config": payload.config,
+                },
             )
             raise
 
@@ -136,6 +144,12 @@ class VisualizationService:
                 error=error,
                 related_resource_type="dashboard",
                 related_resource_id=None,
+                retry_payload={
+                    "operation": "dashboard_save",
+                    "project_id": payload.project_id,
+                    "name": payload.name,
+                    "layout": payload.layout,
+                },
             )
             raise
 
@@ -310,6 +324,7 @@ class VisualizationService:
         error: Exception,
         related_resource_type: str | None,
         related_resource_id: str | None,
+        retry_payload: dict[str, object] | None,
     ) -> None:
         if self.tasks is None:
             return
@@ -321,6 +336,7 @@ class VisualizationService:
             error=error,
             related_resource_type=related_resource_type,
             related_resource_id=related_resource_id,
+            retry_payload=retry_payload,
         )
 
 

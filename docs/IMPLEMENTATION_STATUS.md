@@ -57,7 +57,8 @@ Current implementation has moved beyond pure planning. The repository now has ba
 - Dashboard/report layout creation/list APIs backed by chart resources.
 - Task center API for project-scoped workflow task status visibility.
 - Task failure records for import parsing, dataset materialization, cleaning execution, SQL execution/materialization, and chart/dashboard save actions.
-- Task retry request API that creates a pending retry task as a lightweight queue placeholder.
+- Task retry API with persisted retry metadata and in-process synchronous replay for selected safe operations.
+- Retryable task execution currently covers dataset materialization, cleaning recipe execution, SQL data view materialization, chart save, and dashboard/report save.
 - Basic operation log and lineage records for implemented workflow actions.
 - Persisted dataset fields and physical table name mapping.
 
@@ -93,7 +94,7 @@ Initial core tables have been modeled and migrated:
 - Chart configuration page with real Data View fields and ECharts rendering.
 - Dashboard/report source page with basic free-layout report mode.
 - Task center page with project filtering, status summary, workflow coverage, and recent task table.
-- Task center retry entry for failed or retryable tasks, with immediate list refresh and retry request feedback.
+- Task center retry entry controlled by backend retry eligibility, with immediate list refresh and completion feedback.
 - Task center related-resource links for datasets, data views, charts, and dashboards, with target pages reading route query parameters for selection/highlighting.
 - Placeholder pages remain only for features not yet implemented.
 - Frontend API client tests.
@@ -127,7 +128,8 @@ Initial core tables have been modeled and migrated:
 - Formal dataset creation creates and populates a physical table.
 - Operation logs and lineage records exist for the implemented workflow actions, but the lineage graph UI is not implemented yet.
 - Task center records synchronous workflow actions as completed or failed/retryable tasks.
-- Retry requests create pending retry tasks as a lightweight placeholder; they do not yet replay the original business operation without a worker/queue.
+- Retry execution is synchronous inside the API request for selected safe operations; it is not yet backed by Redis/Celery/RQ or a distributed worker.
+- File preview parse failures are still not replayed by retry because failed uploads do not yet have a durable retry payload before parsing succeeds.
 - Authentication is still development-oriented and not production JWT/auth hardening.
 - External database import/connectors and API data sources are still reserved for later milestones.
 - Scheduled sync and distributed worker execution are not implemented yet.
@@ -145,10 +147,10 @@ Future work must preserve these boundaries:
 
 ## Recommended Next Build Step
 
-The next implementation step should connect task retry placeholders to resource-aware recovery flows:
+The next implementation step should continue strengthening the first-priority local file data access path:
 
-1. Define replay payload metadata for each retryable task type.
-2. Add a lightweight in-process retry executor for selected safe operations, or defer execution to the future queue worker.
+1. Improve local file import robustness around upload staging, duplicate dataset names, and clearer import failure recovery.
+2. Add richer dataset quality profiling after materialization.
 3. Then implement the external database read-only connector MVP.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

@@ -28,6 +28,7 @@ describe("TaskCenterPage", () => {
             error_message: null,
             related_resource_type: "file_import_preview",
             related_resource_id: "preview_1",
+            can_retry: false,
             started_at: "2026-07-04T08:00:00Z",
             finished_at: "2026-07-04T08:00:01Z",
             created_at: "2026-07-04T08:00:00Z",
@@ -44,6 +45,7 @@ describe("TaskCenterPage", () => {
             error_message: null,
             related_resource_type: "data_view",
             related_resource_id: "view_1",
+            can_retry: false,
             started_at: "2026-07-04T08:01:00Z",
             finished_at: "2026-07-04T08:01:03Z",
             created_at: "2026-07-04T08:01:00Z",
@@ -60,6 +62,7 @@ describe("TaskCenterPage", () => {
             error_message: "Template missing",
             related_resource_type: "dashboard",
             related_resource_id: "dash_1",
+            can_retry: false,
             started_at: "2026-07-04T08:02:00Z",
             finished_at: "2026-07-04T08:02:05Z",
             created_at: "2026-07-04T08:02:00Z",
@@ -76,7 +79,9 @@ describe("TaskCenterPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("SQL data view")).toBeInTheDocument();
     expect(screen.getByText("Template missing")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Open resource" })).toEqual([
       expect.objectContaining({
         href: expect.stringContaining(
@@ -113,14 +118,16 @@ describe("TaskCenterPage", () => {
               ...failedTask,
               status: "retryable",
               error_message: "Template missing | Retry requested as task_retry",
+              can_retry: true,
             },
             retry_task: {
               ...failedTask,
               id: "task_retry",
               name: "Retry requested: Export failed",
-              status: "pending",
-              progress: 0,
+              status: "success",
+              progress: 100,
               error_message: null,
+              can_retry: false,
             },
           }),
         );
@@ -139,7 +146,7 @@ describe("TaskCenterPage", () => {
     await user.click(await screen.findByRole("button", { name: "Retry" }));
 
     expect(
-      await screen.findByText("Retry requested as task_retry"),
+      await screen.findByText("Retry finished as task_retry"),
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -207,6 +214,7 @@ const failedTask = {
   error_message: "Template missing",
   related_resource_type: "dashboard",
   related_resource_id: "dash_1",
+  can_retry: true,
   started_at: "2026-07-04T08:02:00Z",
   finished_at: "2026-07-04T08:02:05Z",
   created_at: "2026-07-04T08:02:00Z",

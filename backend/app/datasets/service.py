@@ -126,6 +126,7 @@ class DatasetService:
                 error=error,
                 related_resource_type="file_import_preview",
                 related_resource_id=payload.preview_id,
+                retry_payload=dataset_materialization_retry_payload(payload),
             )
             raise
 
@@ -220,6 +221,7 @@ class DatasetService:
                 error=error,
                 related_resource_type="dataset",
                 related_resource_id=source_dataset_id,
+                retry_payload=None,
             )
             raise
 
@@ -465,6 +467,7 @@ class DatasetService:
         error: Exception,
         related_resource_type: str | None,
         related_resource_id: str | None,
+        retry_payload: dict[str, object] | None,
     ) -> None:
         if self.tasks is None:
             return
@@ -476,6 +479,7 @@ class DatasetService:
             error=error,
             related_resource_type=related_resource_type,
             related_resource_id=related_resource_id,
+            retry_payload=retry_payload,
         )
 
 
@@ -484,3 +488,15 @@ dataset_service = DatasetService()
 
 def build_physical_table_name(dataset_id: str) -> str:
     return f"ds_{dataset_id.removeprefix('dataset_')[:24]}"
+
+
+def dataset_materialization_retry_payload(
+    payload: DatasetCreateRequest,
+) -> dict[str, object]:
+    return {
+        "operation": "dataset_materialization",
+        "project_id": payload.project_id,
+        "preview_id": payload.preview_id,
+        "name": payload.name,
+        "fields": [field.model_dump() for field in payload.fields],
+    }

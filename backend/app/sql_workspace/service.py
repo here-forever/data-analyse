@@ -78,6 +78,7 @@ class SqlWorkspaceService:
                 task_type="sql_query_run",
                 sql=payload.sql,
                 error=error,
+                retry_payload=None,
             )
             raise
 
@@ -134,6 +135,14 @@ class SqlWorkspaceService:
                 task_type="sql_data_view_materialization",
                 sql=payload.sql,
                 error=error,
+                retry_payload={
+                    "operation": "sql_data_view_materialization",
+                    "project_id": payload.project_id,
+                    "name": payload.name,
+                    "description": payload.description,
+                    "sql": payload.sql,
+                    "limit": payload.limit,
+                },
             )
             raise
 
@@ -230,6 +239,7 @@ class SqlWorkspaceService:
         task_type: str,
         sql: str,
         error: Exception,
+        retry_payload: dict[str, object] | None,
     ) -> None:
         if self.tasks is None:
             return
@@ -241,6 +251,7 @@ class SqlWorkspaceService:
             error=error,
             related_resource_type="sql_query",
             related_resource_id=sql[:128],
+            retry_payload=retry_payload,
         )
 
 

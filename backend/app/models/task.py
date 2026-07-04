@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -20,5 +20,6 @@ class Task(TimestampMixin, Base):
     error_message: Mapped[str | None] = mapped_column(Text)
     related_resource_type: Mapped[str | None] = mapped_column(String(64))
     related_resource_id: Mapped[str | None] = mapped_column(String(128))
+    retry_payload: Mapped[dict[str, object] | None] = mapped_column(JSON)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

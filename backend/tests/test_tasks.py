@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
+
+from app.core.config import get_settings
 
 
 def login(client: TestClient) -> dict[str, str]:
@@ -234,7 +238,7 @@ def test_task_center_can_filter_by_project(client: TestClient) -> None:
     }
 
 
-def test_failed_task_can_request_retry(client: TestClient) -> None:
+def test_failed_task_without_retry_payload_cannot_request_retry(client: TestClient) -> None:
     headers = login(client)
     project_id = create_project(client, headers)
 
@@ -256,29 +260,96 @@ def test_failed_task_can_request_retry(client: TestClient) -> None:
     failed_task = list_response.json()["items"][0]
     assert failed_task["task_type"] == "file_preview_parse"
     assert failed_task["status"] == "failed"
+    assert failed_task["can_retry"] is False
     assert failed_task["error_message"] == "Only CSV and Excel files are supported"
 
     retry_response = client.post(
         f"/api/tasks/{failed_task['id']}/retry",
         headers=headers,
     )
-    assert retry_response.status_code == 200
-    retry_payload = retry_response.json()
-    assert retry_payload["original_task"]["id"] == failed_task["id"]
-    assert retry_payload["original_task"]["status"] == "retryable"
-    assert "Retry requested as" in retry_payload["original_task"]["error_message"]
-    assert retry_payload["retry_task"]["status"] == "pending"
-    assert retry_payload["retry_task"]["progress"] == 0
-    assert retry_payload["retry_task"]["task_type"] == failed_task["task_type"]
+    assert retry_response.status_code == 400
+    assert retry_response.json()["error"]["code"] == "task_retry_payload_missing"
 
-    refreshed_response = client.get(
+
+def test_dataset_materialization_retry_executes_real_operation(
+    client: TestClient,
+) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+    upload_response = client.post(
+        "/api/imports/file-previews",
+        headers=headers,
+        data={"project_id": project_id},
+        files={
+            "file": (
+                "orders.csv",
+                b"customer,amount,region\nAda,19.5,West\nLin,42.0,East\n",
+                "text/csv",
+            )
+        },
+    )
+    assert upload_response.status_code == 201
+    preview = upload_response.json()
+    source_file = next(Path(get_settings().upload_storage_root).glob(f"{project_id}/*/orders.csv"))
+    backup_file = source_file.with_name("orders.csv.retry-backup")
+    source_file.replace(backup_file)
+
+    try:
+        failed_create_response = client.post(
+            "/api/datasets",
+            headers=headers,
+            json={
+                "project_id": project_id,
+                "preview_id": preview["id"],
+                "name": "Orders",
+                "fields": preview["fields"],
+            },
+        )
+        assert failed_create_response.status_code == 409
+        assert failed_create_response.json()["error"]["code"] == "uploaded_source_file_missing"
+    finally:
+        if backup_file.exists():
+            backup_file.replace(source_file)
+
+    list_response = client.get(
         "/api/tasks",
         headers=headers,
         params={"project_id": project_id},
     )
-    assert refreshed_response.status_code == 200
-    refreshed_tasks = refreshed_response.json()["items"]
-    assert {task["status"] for task in refreshed_tasks} >= {"pending", "retryable"}
+    assert list_response.status_code == 200
+    failed_task = next(
+        task
+        for task in list_response.json()["items"]
+        if task["task_type"] == "dataset_materialization"
+    )
+    assert failed_task["status"] == "failed"
+    assert failed_task["can_retry"] is True
+
+    retry_response = client.post(
+        f"/api/tasks/{failed_task['id']}/retry",
+        headers=headers,
+    )
+
+    assert retry_response.status_code == 200
+    retry_payload = retry_response.json()
+    assert retry_payload["original_task"]["id"] == failed_task["id"]
+    assert retry_payload["original_task"]["status"] == "retryable"
+    assert retry_payload["original_task"]["can_retry"] is True
+    assert "Retry requested as" in retry_payload["original_task"]["error_message"]
+    assert retry_payload["retry_task"]["status"] == "success"
+    assert retry_payload["retry_task"]["progress"] == 100
+    assert retry_payload["retry_task"]["task_type"] == failed_task["task_type"]
+    assert retry_payload["retry_task"]["related_resource_type"] == "dataset"
+    assert retry_payload["retry_task"]["can_retry"] is False
+
+    dataset_id = retry_payload["retry_task"]["related_resource_id"]
+    preview_response = client.get(
+        f"/api/datasets/{dataset_id}/preview",
+        headers=headers,
+        params={"page": 1, "page_size": 10},
+    )
+    assert preview_response.status_code == 200
+    assert preview_response.json()["total_rows"] == 2
 
 
 def test_successful_task_cannot_request_retry(client: TestClient) -> None:

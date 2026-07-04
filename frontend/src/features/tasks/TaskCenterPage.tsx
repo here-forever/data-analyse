@@ -307,7 +307,7 @@ function TaskTable({
           </table>
           {retryTaskId ? (
             <div className="border-t border-line bg-emerald/10 px-4 py-3 text-sm text-emerald">
-              Retry requested as {retryTaskId}
+              Retry finished as {retryTaskId}
             </div>
           ) : null}
           {retryError ? (
@@ -330,7 +330,6 @@ function TaskRow({
   retryingTaskId?: string;
   onRetry: (taskId: string) => void;
 }) {
-  const canRetry = task.status === "failed" || task.status === "retryable";
   const isRetrying = retryingTaskId === task.id;
 
   return (
@@ -360,7 +359,7 @@ function TaskRow({
         {formatDate(task.finished_at ?? task.created_at)}
       </td>
       <td className="border-b border-line px-4 py-3">
-        {canRetry ? (
+        {task.can_retry ? (
           <button
             className="inline-flex h-8 items-center gap-2 rounded-md border border-amber/30 bg-amber/10 px-3 text-xs font-semibold text-amber transition hover:bg-amber/20 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isRetrying}
@@ -368,7 +367,7 @@ function TaskRow({
             type="button"
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            {isRetrying ? "Requesting" : "Retry"}
+            {isRetrying ? "Retrying" : "Retry"}
           </button>
         ) : (
           <span className="text-xs text-muted">-</span>

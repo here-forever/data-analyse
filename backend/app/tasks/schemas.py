@@ -17,6 +17,7 @@ class TaskResponse(BaseModel):
     error_message: str | None
     related_resource_type: str | None
     related_resource_id: str | None
+    can_retry: bool
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime

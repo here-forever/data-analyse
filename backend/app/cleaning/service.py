@@ -347,6 +347,11 @@ class CleaningService:
             error=error,
             related_resource_type="cleaning_recipe",
             related_resource_id=related_resource_id,
+            retry_payload={
+                "operation": "cleaning_recipe_execution",
+                "recipe_id": recipe_id,
+                "output_name": output_name,
+            },
         )
 
     def _record_recipe_execution(

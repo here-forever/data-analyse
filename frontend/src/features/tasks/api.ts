@@ -14,6 +14,7 @@ export interface TaskItem {
   error_message: string | null;
   related_resource_type: string | null;
   related_resource_id: string | null;
+  can_retry: boolean;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
