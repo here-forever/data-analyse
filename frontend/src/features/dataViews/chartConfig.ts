@@ -1,4 +1,4 @@
-import type { DataView } from "./api";
+import type { ChartDefinition, DataView } from "./api";
 
 export const CHART_TYPES = ["bar", "line", "pie", "table"] as const;
 export const AGGREGATIONS = ["sum", "avg", "count"] as const;
@@ -51,6 +51,27 @@ export function toChartConfigPayload(
     data_view_name: dataView.name,
     preview_rows: rows.slice(0, 200),
   };
+}
+
+export function chartDefinitionToState(
+  chart: ChartDefinition,
+): ChartBuilderState {
+  return {
+    name: chart.name,
+    chartType: asChartType(chart.chart_type),
+    dimension: readStringConfig(chart.config.dimension),
+    metric: readStringConfig(chart.config.metric),
+    aggregation: asAggregation(chart.config.aggregation),
+  };
+}
+
+export function getChartPreviewRows(
+  chart: ChartDefinition,
+): Array<Record<string, string | number | boolean | null>> {
+  if (!Array.isArray(chart.config.preview_rows)) {
+    return [];
+  }
+  return chart.config.preview_rows.filter(isPreviewRow);
 }
 
 export function aggregateRows(
@@ -132,4 +153,26 @@ function toNumber(value: string | number | boolean | null | undefined): number {
 
 function roundNumber(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function asChartType(value: string): ChartType {
+  return CHART_TYPES.includes(value as ChartType)
+    ? (value as ChartType)
+    : "bar";
+}
+
+function asAggregation(value: unknown): Aggregation {
+  return AGGREGATIONS.includes(value as Aggregation)
+    ? (value as Aggregation)
+    : "sum";
+}
+
+function readStringConfig(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function isPreviewRow(
+  value: unknown,
+): value is Record<string, string | number | boolean | null> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

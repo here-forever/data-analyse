@@ -33,6 +33,7 @@ import {
   type ChartBuilderState,
   type ChartType,
 } from "./chartConfig";
+import { DashboardPreview } from "./DashboardPreview";
 
 const DEFAULT_PROJECT_ID = "prj_demo";
 const PAGE_SIZE = 20;
@@ -55,6 +56,8 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
   const [layoutMode, setLayoutMode] = useState<"dashboard" | "report">(
     "dashboard",
   );
+  const [selectedChartIds, setSelectedChartIds] = useState<string[]>([]);
+  const [hasManualChartSelection, setHasManualChartSelection] = useState(false);
   const [chartState, setChartState] = useState<ChartBuilderState>(() =>
     createDefaultChartState(null),
   );
@@ -136,8 +139,13 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
 
   const createDashboardMutation = useMutation({
     mutationFn: () => {
-      const sourceChart = selectedDataViewCharts[0] ?? charts[0];
-      if (!sourceChart) {
+      const layoutChartIds =
+        selectedChartIds.length > 0
+          ? selectedChartIds
+          : hasManualChartSelection
+            ? []
+            : [charts[0]?.id].filter(Boolean);
+      if (layoutChartIds.length === 0) {
         throw new Error(
           "Create a chart before creating a dashboard or report.",
         );
@@ -147,19 +155,20 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
         project_id: submittedProjectId,
         name:
           layoutMode === "dashboard"
-            ? `${sourceChart.name} Dashboard`
-            : `${sourceChart.name} Report`,
+            ? `${submittedProjectId} Dashboard`
+            : `${submittedProjectId} Report`,
         layout: {
           mode: layoutMode,
-          items: [
-            {
-              chart_id: sourceChart.id,
-              x: 0,
-              y: 0,
-              w: layoutMode === "dashboard" ? 6 : 12,
-              h: layoutMode === "dashboard" ? 4 : 6,
-            },
-          ],
+          items: layoutChartIds.map((chartId, index) => ({
+            chart_id: chartId,
+            x: layoutMode === "dashboard" ? (index % 2) * 6 : 0,
+            y:
+              layoutMode === "dashboard"
+                ? Math.floor(index / 2) * 4
+                : index * 6,
+            w: layoutMode === "dashboard" ? 6 : 12,
+            h: layoutMode === "dashboard" ? 4 : 6,
+          })),
         },
       });
     },
@@ -174,6 +183,8 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
     event.preventDefault();
     setSubmittedProjectId(projectId.trim());
     setSelectedDataViewId(null);
+    setSelectedChartIds([]);
+    setHasManualChartSelection(false);
     setChartState(createDefaultChartState(null));
     setChartStateDataViewId(null);
     createChartMutation.reset();
@@ -184,6 +195,8 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
     setSelectedDataViewId(dataView.id);
     setChartState(createDefaultChartState(dataView));
     setChartStateDataViewId(dataView.id);
+    setSelectedChartIds([]);
+    setHasManualChartSelection(false);
     createChartMutation.reset();
     createDashboardMutation.reset();
   }
@@ -290,7 +303,17 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
               createdDashboard={createDashboardMutation.data}
               createError={createDashboardMutation.error}
               isCreating={createDashboardMutation.isPending}
-              onLayoutModeChange={setLayoutMode}
+              selectedChartIds={selectedChartIds}
+              hasManualChartSelection={hasManualChartSelection}
+              onSelectedChartIdsChange={(chartIds) => {
+                setSelectedChartIds(chartIds);
+                setHasManualChartSelection(true);
+                createDashboardMutation.reset();
+              }}
+              onLayoutModeChange={(nextMode) => {
+                setLayoutMode(nextMode);
+                createDashboardMutation.reset();
+              }}
               onCreate={() => createDashboardMutation.mutate()}
             />
           )}
@@ -504,6 +527,9 @@ function DashboardResourcePanel({
   createError,
   isCreating,
   onLayoutModeChange,
+  selectedChartIds,
+  hasManualChartSelection,
+  onSelectedChartIdsChange,
   onCreate,
 }: {
   charts: ChartDefinition[];
@@ -515,28 +541,53 @@ function DashboardResourcePanel({
   createError: Error | null;
   isCreating: boolean;
   onLayoutModeChange: (mode: "dashboard" | "report") => void;
+  selectedChartIds: string[];
+  hasManualChartSelection: boolean;
+  onSelectedChartIdsChange: (chartIds: string[]) => void;
   onCreate: () => void;
 }) {
+  const activeChartIds =
+    selectedChartIds.length > 0
+      ? selectedChartIds
+      : !hasManualChartSelection && charts[0]
+        ? [charts[0].id]
+        : [];
+
+  function toggleChart(chartId: string) {
+    if (selectedChartIds.includes(chartId)) {
+      onSelectedChartIdsChange(selectedChartIds.filter((id) => id !== chartId));
+      return;
+    }
+    onSelectedChartIdsChange([...selectedChartIds, chartId]);
+  }
+
   return (
     <div className="rounded-md border border-line bg-panel shadow-panel">
       <PanelHeader
         icon={<Boxes className="h-4 w-4 text-brand" />}
-        title="Dashboard and report drafts"
+        title="Dashboard and report builder"
       />
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_240px]">
-        <ResourceList
-          emptyTitle={isLoading ? "Loading layouts" : "No layouts yet"}
-          error={error}
-          items={dashboards}
-          renderItem={(dashboard) => (
-            <ResourceTile
-              key={dashboard.id}
-              title={dashboard.name}
-              meta={`${String(dashboard.layout.mode ?? "dashboard")} - ${dashboard.id}`}
-            />
-          )}
-        />
-        <div className="rounded-md border border-amber/20 bg-amber/10 p-3">
+      <div className="grid gap-4 p-4 2xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="space-y-4">
+          <DashboardPreview
+            charts={charts}
+            mode={layoutMode}
+            selectedChartIds={activeChartIds}
+          />
+          <ResourceList
+            emptyTitle={isLoading ? "Loading layouts" : "No layouts saved yet"}
+            error={error}
+            items={dashboards}
+            renderItem={(dashboard) => (
+              <ResourceTile
+                key={dashboard.id}
+                title={dashboard.name}
+                meta={`${String(dashboard.layout.mode ?? "dashboard")} - ${dashboard.id}`}
+              />
+            )}
+          />
+        </div>
+        <div className="space-y-3 rounded-md border border-amber/20 bg-amber/10 p-3">
           <label>
             <span className="text-xs font-semibold uppercase text-amber">
               Layout mode
@@ -552,12 +603,42 @@ function DashboardResourcePanel({
               <option value="report">Free report</option>
             </select>
           </label>
-          <p className="mt-3 truncate text-sm font-semibold text-ink">
-            {charts[0]?.name ?? "No chart available"}
-          </p>
+          <div>
+            <p className="text-xs font-semibold uppercase text-amber">Charts</p>
+            <div className="mt-2 max-h-64 space-y-2 overflow-auto">
+              {charts.length === 0 ? (
+                <div className="rounded-md border border-line bg-white px-3 py-4 text-sm text-muted">
+                  No chart resources available.
+                </div>
+              ) : (
+                charts.map((chart) => (
+                  <label
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-line bg-white px-3 py-3 text-sm text-ink transition hover:border-amber"
+                    key={chart.id}
+                  >
+                    <input
+                      aria-label={`Select ${chart.name}`}
+                      checked={activeChartIds.includes(chart.id)}
+                      className="mt-1 h-4 w-4 rounded border-line text-amber"
+                      onChange={() => toggleChart(chart.id)}
+                      type="checkbox"
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">
+                        {chart.name}
+                      </span>
+                      <span className="mt-1 block truncate text-xs text-muted">
+                        {chart.chart_type} - {chart.data_view_id}
+                      </span>
+                    </span>
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
           <button
             className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-amber px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-45"
-            disabled={charts.length === 0 || isCreating}
+            disabled={activeChartIds.length === 0 || isCreating}
             onClick={onCreate}
             type="button"
           >

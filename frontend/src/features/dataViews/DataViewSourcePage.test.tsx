@@ -245,7 +245,7 @@ describe("DataViewSourcePage", () => {
             jsonResponse({
               id: "dash_1",
               project_id: "prj_demo",
-              name: "Orders Chart Report",
+              name: "prj_demo Report",
               layout: {
                 mode: "report",
                 items: [{ chart_id: "chart_1", x: 0, y: 0, w: 12, h: 6 }],
@@ -264,11 +264,13 @@ describe("DataViewSourcePage", () => {
     expect((await screen.findAllByText("Orders View")).length).toBeGreaterThan(
       0,
     );
-    expect(await screen.findByText("Orders Chart")).toBeInTheDocument();
+    expect((await screen.findAllByText("Orders Chart")).length).toBeGreaterThan(
+      0,
+    );
     await user.selectOptions(screen.getByLabelText("Layout mode"), "report");
     await user.click(screen.getByRole("button", { name: "Save layout" }));
     expect(
-      await screen.findByText("Saved Orders Chart Report"),
+      await screen.findByText("Saved prj_demo Report"),
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
