@@ -1,6 +1,9 @@
 from io import BytesIO
 
 from fastapi.testclient import TestClient
+from sqlalchemy import text
+
+from app.core.database import get_db_session
 
 
 def login(client: TestClient) -> dict[str, str]:
@@ -68,6 +71,18 @@ def test_csv_upload_creates_preview_and_dataset(client: TestClient) -> None:
     assert dataset["name"] == "Sales Orders"
     assert dataset["source_preview_id"] == preview["id"]
     assert dataset["physical_table_name"].startswith("ds_")
+
+    session = next(client.app.dependency_overrides[get_db_session]())
+    try:
+        rows = session.execute(
+            text(f'SELECT order_id, amount, order_date FROM "{dataset["physical_table_name"]}"')
+        ).all()
+    finally:
+        session.close()
+
+    assert len(rows) == 2
+    assert rows[0].order_id == 1
+    assert rows[0].amount == 19.5
 
 
 def test_excel_upload_creates_preview(client: TestClient) -> None:

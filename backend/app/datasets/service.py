@@ -3,8 +3,10 @@ from dataclasses import dataclass
 from app.audit.service import AuditService
 from app.core.errors import AppError
 from app.core.ids import new_id
+from app.datasets.materializer import POSTGRES_IDENTIFIER_LIMIT, SYSTEM_ROW_ID
 from app.datasets.repository import DatasetRepository
 from app.datasets.schemas import DatasetCreateRequest
+from app.imports.parser import coerce_value
 from app.imports.schemas import ImportFieldPreview
 from app.imports.service import ImportService, import_service
 from app.models.dataset import Dataset as DatasetModel
@@ -42,11 +44,12 @@ class DatasetService:
         preview = self.imports.get_preview(payload.preview_id)
         if preview is None or preview.project_id != payload.project_id:
             raise AppError(message="Preview not found", code="preview_not_found", status_code=404)
+        self._validate_fields(payload.fields)
 
         dataset_id = new_id("dataset")
         if self.repository is None:
             dataset_id = f"dataset_{len(self._datasets) + 1}"
-        physical_table_name = f"ds_{payload.project_id}_{dataset_id}"
+        physical_table_name = build_physical_table_name(dataset_id)
         dataset = Dataset(
             id=dataset_id,
             project_id=payload.project_id,
@@ -58,6 +61,10 @@ class DatasetService:
         )
 
         if self.repository is not None:
+            materialized_rows = self._build_materialized_rows(
+                preview_id=preview.id,
+                fields=payload.fields,
+            )
             self.repository.save_dataset(
                 dataset=DatasetModel(
                     id=dataset.id,
@@ -85,12 +92,71 @@ class DatasetService:
                     dataset_id=dataset.id,
                     physical_table_name=dataset.physical_table_name,
                 ),
+                materialized_fields=payload.fields,
+                materialized_rows=materialized_rows,
             )
             self._record_dataset_audit(dataset)
             return dataset
 
         self._datasets[dataset.id] = dataset
         return dataset
+
+    def _validate_fields(self, fields: list[ImportFieldPreview]) -> None:
+        names = [field.name for field in fields]
+        if any(not name.strip() for name in names):
+            raise AppError(
+                message="Dataset field names cannot be empty",
+                code="invalid_dataset_fields",
+                status_code=400,
+            )
+        if SYSTEM_ROW_ID in names:
+            raise AppError(
+                message=f"{SYSTEM_ROW_ID} is reserved for dataset row identity",
+                code="reserved_dataset_field_name",
+                status_code=400,
+            )
+        if any(len(name.encode("utf-8")) > POSTGRES_IDENTIFIER_LIMIT for name in names):
+            raise AppError(
+                message="Dataset field names must fit PostgreSQL identifier length",
+                code="dataset_field_name_too_long",
+                status_code=400,
+            )
+        if len(names) != len(set(names)):
+            raise AppError(
+                message="Dataset field names must be unique",
+                code="duplicate_dataset_fields",
+                status_code=400,
+            )
+
+    def _build_materialized_rows(
+        self,
+        *,
+        preview_id: str,
+        fields: list[ImportFieldPreview],
+    ) -> list[dict[str, object | None]]:
+        parsed_file = self.imports.parse_preview_source(preview_id)
+        source_fields_by_order = {field.order: field for field in parsed_file.fields}
+        materialized_rows: list[dict[str, object | None]] = []
+
+        for target_field in fields:
+            if target_field.order not in source_fields_by_order:
+                raise AppError(
+                    message="Dataset field order does not match source preview",
+                    code="invalid_dataset_field_order",
+                    status_code=400,
+                )
+
+        for row in parsed_file.rows:
+            materialized_row: dict[str, object | None] = {}
+            for target_field in fields:
+                source_field = source_fields_by_order[target_field.order]
+                materialized_row[target_field.name] = coerce_value(
+                    row.get(source_field.name),
+                    target_field.inferred_type,
+                )
+            materialized_rows.append(materialized_row)
+
+        return materialized_rows
 
     def _record_dataset_audit(self, dataset: Dataset) -> None:
         if self.audit is None:
@@ -107,6 +173,7 @@ class DatasetService:
                 "physical_table_name": dataset.physical_table_name,
                 "row_count": dataset.row_count,
                 "field_count": len(dataset.fields),
+                "materialized": True,
             },
         )
         self.audit.record_lineage(
@@ -121,3 +188,7 @@ class DatasetService:
 
 
 dataset_service = DatasetService()
+
+
+def build_physical_table_name(dataset_id: str) -> str:
+    return f"ds_{dataset_id.removeprefix('dataset_')[:24]}"

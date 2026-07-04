@@ -23,3 +23,6 @@ class ImportRepository:
 
     def get_preview(self, preview_id: str) -> FileImportPreviewModel | None:
         return self.session.get(FileImportPreviewModel, preview_id)
+
+    def get_uploaded_file(self, uploaded_file_id: str) -> UploadedFileModel | None:
+        return self.session.get(UploadedFileModel, uploaded_file_id)
