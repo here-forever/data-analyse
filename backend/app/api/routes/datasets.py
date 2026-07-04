@@ -3,6 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from app.audit.repository import AuditRepository
+from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user
 from app.auth.service import User
 from app.core.database import get_db_session
@@ -17,9 +19,11 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 def get_dataset_service(
     session: Annotated[Session, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> DatasetService:
     imports = ImportService(ImportRepository(session))
-    return DatasetService(DatasetRepository(session), imports)
+    audit = AuditService(AuditRepository(session), actor_id=current_user.id)
+    return DatasetService(DatasetRepository(session), imports, audit=audit)
 
 
 def to_dataset_response(dataset: Dataset) -> DatasetResponse:
@@ -37,7 +41,6 @@ def to_dataset_response(dataset: Dataset) -> DatasetResponse:
 @router.post("", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED)
 def create_dataset(
     payload: DatasetCreateRequest,
-    _current_user: Annotated[User, Depends(get_current_user)],
     datasets: Annotated[DatasetService, Depends(get_dataset_service)],
 ) -> DatasetResponse:
     dataset = datasets.create_dataset(payload)

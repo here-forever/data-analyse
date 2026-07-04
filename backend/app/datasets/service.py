@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.audit.service import AuditService
 from app.core.errors import AppError
 from app.core.ids import new_id
 from app.datasets.repository import DatasetRepository
@@ -27,9 +28,11 @@ class DatasetService:
         self,
         repository: DatasetRepository | None = None,
         imports: ImportService = import_service,
+        audit: AuditService | None = None,
     ) -> None:
         self.repository = repository
         self.imports = imports
+        self.audit = audit
         self._datasets: dict[str, Dataset] = {}
 
     def reset(self) -> None:
@@ -83,10 +86,38 @@ class DatasetService:
                     physical_table_name=dataset.physical_table_name,
                 ),
             )
+            self._record_dataset_audit(dataset)
             return dataset
 
         self._datasets[dataset.id] = dataset
         return dataset
+
+    def _record_dataset_audit(self, dataset: Dataset) -> None:
+        if self.audit is None:
+            return
+
+        self.audit.record_operation(
+            action="dataset.created",
+            project_id=dataset.project_id,
+            resource_type="dataset",
+            resource_id=dataset.id,
+            detail={
+                "name": dataset.name,
+                "source_preview_id": dataset.source_preview_id,
+                "physical_table_name": dataset.physical_table_name,
+                "row_count": dataset.row_count,
+                "field_count": len(dataset.fields),
+            },
+        )
+        self.audit.record_lineage(
+            project_id=dataset.project_id,
+            source_type="file_import_preview",
+            source_id=dataset.source_preview_id,
+            target_type="dataset",
+            target_id=dataset.id,
+            transform_type="dataset_creation",
+            transform_id=dataset.id,
+        )
 
 
 dataset_service = DatasetService()

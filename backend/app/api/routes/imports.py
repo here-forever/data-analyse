@@ -3,12 +3,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.audit.repository import AuditRepository
+from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user
 from app.auth.service import User
+from app.core.config import get_settings
 from app.core.database import get_db_session
 from app.imports.repository import ImportRepository
 from app.imports.schemas import FilePreviewResponse
 from app.imports.service import FilePreview, ImportService
+from app.imports.storage import LocalFileStorage
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -17,7 +21,13 @@ def get_import_service(
     session: Annotated[Session, Depends(get_db_session)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ImportService:
-    return ImportService(ImportRepository(session), uploader_id=current_user.id)
+    settings = get_settings()
+    return ImportService(
+        ImportRepository(session),
+        uploader_id=current_user.id,
+        storage=LocalFileStorage(settings.upload_storage_root),
+        audit=AuditService(AuditRepository(session), actor_id=current_user.id),
+    )
 
 
 def to_file_preview_response(preview: FilePreview) -> FilePreviewResponse:

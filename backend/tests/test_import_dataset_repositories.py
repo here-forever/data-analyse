@@ -1,6 +1,10 @@
+from pathlib import Path
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.audit.repository import AuditRepository
+from app.audit.service import AuditService
 from app.auth.repository import AuthRepository
 from app.auth.service import AuthService
 from app.core.database import Base, import_models
@@ -9,6 +13,9 @@ from app.datasets.schemas import DatasetCreateRequest
 from app.datasets.service import DatasetService
 from app.imports.repository import ImportRepository
 from app.imports.service import ImportService
+from app.imports.storage import LocalFileStorage
+from app.models.audit import LineageEdge as LineageEdgeModel
+from app.models.audit import OperationLog as OperationLogModel
 from app.models.dataset import DatasetField as DatasetFieldModel
 from app.models.dataset import DatasetTableMap as DatasetTableMapModel
 from app.models.imports import FileImportPreview as FileImportPreviewModel
@@ -36,10 +43,15 @@ def create_project(session: Session) -> tuple[str, str]:
     return project.id, owner.id
 
 
-def test_import_repository_persists_uploaded_file_and_preview() -> None:
+def test_import_repository_persists_uploaded_file_preview_audit_and_lineage(tmp_path) -> None:
     session = create_test_session()
     project_id, uploader_id = create_project(session)
-    service = ImportService(ImportRepository(session), uploader_id=uploader_id)
+    service = ImportService(
+        ImportRepository(session),
+        uploader_id=uploader_id,
+        storage=LocalFileStorage(str(tmp_path / "uploads")),
+        audit=AuditService(AuditRepository(session), actor_id=uploader_id),
+    )
 
     preview = service.create_file_preview(
         project_id=project_id,
@@ -51,23 +63,45 @@ def test_import_repository_persists_uploaded_file_and_preview() -> None:
         select(UploadedFileModel).where(UploadedFileModel.file_name == "sales.csv")
     )
     saved_preview = session.get(FileImportPreviewModel, preview.id)
+    operation_log = session.scalar(
+        select(OperationLogModel).where(OperationLogModel.action == "import.file_preview_created")
+    )
+    lineage_edge = session.scalar(
+        select(LineageEdgeModel).where(LineageEdgeModel.target_id == preview.id)
+    )
 
     assert uploaded_file is not None
     assert saved_preview is not None
     assert saved_preview.uploaded_file_id == uploaded_file.id
     assert saved_preview.fields[0]["name"] == "order_id"
+    assert not uploaded_file.storage_path.startswith("memory://")
+    assert Path(uploaded_file.storage_path).read_bytes() == b"order_id,amount\n1,19.5\n2,42.0\n"
+    assert operation_log is not None
+    assert operation_log.actor_id == uploader_id
+    assert operation_log.detail["uploaded_file_id"] == uploaded_file.id
+    assert lineage_edge is not None
+    assert lineage_edge.source_type == "uploaded_file"
+    assert lineage_edge.source_id == uploaded_file.id
 
 
-def test_dataset_repository_persists_dataset_fields_and_table_map() -> None:
+def test_dataset_repository_persists_dataset_fields_table_map_audit_and_lineage(tmp_path) -> None:
     session = create_test_session()
     project_id, uploader_id = create_project(session)
-    import_service = ImportService(ImportRepository(session), uploader_id=uploader_id)
+    import_service = ImportService(
+        ImportRepository(session),
+        uploader_id=uploader_id,
+        storage=LocalFileStorage(str(tmp_path / "uploads")),
+    )
     preview = import_service.create_file_preview(
         project_id=project_id,
         file_name="sales.csv",
         content=b"order_id,amount\n1,19.5\n2,42.0\n",
     )
-    dataset_service = DatasetService(DatasetRepository(session), import_service)
+    dataset_service = DatasetService(
+        DatasetRepository(session),
+        import_service,
+        audit=AuditService(AuditRepository(session), actor_id=uploader_id),
+    )
 
     dataset = dataset_service.create_dataset(
         DatasetCreateRequest(
@@ -88,7 +122,20 @@ def test_dataset_repository_persists_dataset_fields_and_table_map() -> None:
     table_map = session.scalar(
         select(DatasetTableMapModel).where(DatasetTableMapModel.dataset_id == dataset.id)
     )
+    operation_log = session.scalar(
+        select(OperationLogModel).where(OperationLogModel.action == "dataset.created")
+    )
+    lineage_edge = session.scalar(
+        select(LineageEdgeModel).where(LineageEdgeModel.target_id == dataset.id)
+    )
 
     assert [field.name for field in fields] == ["order_id", "amount"]
     assert table_map is not None
     assert table_map.physical_table_name == dataset.physical_table_name
+    assert operation_log is not None
+    assert operation_log.resource_id == dataset.id
+    assert operation_log.detail["source_preview_id"] == preview.id
+    assert lineage_edge is not None
+    assert lineage_edge.source_type == "file_import_preview"
+    assert lineage_edge.source_id == preview.id
+    assert lineage_edge.target_type == "dataset"
