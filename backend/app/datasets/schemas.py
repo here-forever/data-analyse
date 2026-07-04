@@ -18,3 +18,15 @@ class DatasetResponse(BaseModel):
     physical_table_name: str
     row_count: int
     fields: list[ImportFieldPreview]
+
+
+class DatasetListResponse(BaseModel):
+    items: list[DatasetResponse]
+
+
+class DatasetPreviewResponse(BaseModel):
+    dataset: DatasetResponse
+    page: int
+    page_size: int
+    total_rows: int
+    rows: list[dict[str, object | None]]

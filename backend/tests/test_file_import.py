@@ -84,6 +84,48 @@ def test_csv_upload_creates_preview_and_dataset(client: TestClient) -> None:
     assert rows[0].order_id == 1
     assert rows[0].amount == 19.5
 
+    list_response = client.get(
+        "/api/datasets",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+    assert list_response.status_code == 200
+    assert list_response.json()["items"][0]["id"] == dataset["id"]
+
+    detail_response = client.get(f"/api/datasets/{dataset['id']}", headers=headers)
+    assert detail_response.status_code == 200
+    assert detail_response.json()["fields"] == preview["fields"]
+
+    preview_response = client.get(
+        f"/api/datasets/{dataset['id']}/preview",
+        headers=headers,
+        params={"page": 1, "page_size": 1},
+    )
+    assert preview_response.status_code == 200
+    preview_page = preview_response.json()
+    assert preview_page["total_rows"] == 2
+    assert preview_page["page"] == 1
+    assert preview_page["page_size"] == 1
+    assert len(preview_page["rows"]) == 1
+    assert preview_page["rows"][0]["_das_row_id"] == 1
+    assert preview_page["rows"][0]["order_date"] == "2026-01-01"
+
+    second_page_response = client.get(
+        f"/api/datasets/{dataset['id']}/preview",
+        headers=headers,
+        params={"page": 2, "page_size": 1},
+    )
+    assert second_page_response.status_code == 200
+    assert second_page_response.json()["rows"][0]["order_id"] == 2
+
+    invalid_page_size_response = client.get(
+        f"/api/datasets/{dataset['id']}/preview",
+        headers=headers,
+        params={"page": 1, "page_size": 500},
+    )
+    assert invalid_page_size_response.status_code == 400
+    assert invalid_page_size_response.json()["error"]["code"] == "invalid_page_size"
+
 
 def test_excel_upload_creates_preview(client: TestClient) -> None:
     headers = login(client)

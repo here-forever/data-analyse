@@ -9,7 +9,12 @@ from app.auth.dependencies import get_current_user
 from app.auth.service import User
 from app.core.database import get_db_session
 from app.datasets.repository import DatasetRepository
-from app.datasets.schemas import DatasetCreateRequest, DatasetResponse
+from app.datasets.schemas import (
+    DatasetCreateRequest,
+    DatasetListResponse,
+    DatasetPreviewResponse,
+    DatasetResponse,
+)
 from app.datasets.service import Dataset, DatasetService
 from app.imports.repository import ImportRepository
 from app.imports.service import ImportService
@@ -45,3 +50,42 @@ def create_dataset(
 ) -> DatasetResponse:
     dataset = datasets.create_dataset(payload)
     return to_dataset_response(dataset)
+
+
+@router.get("", response_model=DatasetListResponse)
+def list_datasets(
+    project_id: str,
+    datasets: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> DatasetListResponse:
+    return DatasetListResponse(
+        items=[to_dataset_response(dataset) for dataset in datasets.list_datasets(project_id)]
+    )
+
+
+@router.get("/{dataset_id}", response_model=DatasetResponse)
+def get_dataset(
+    dataset_id: str,
+    datasets: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> DatasetResponse:
+    return to_dataset_response(datasets.get_dataset(dataset_id))
+
+
+@router.get("/{dataset_id}/preview", response_model=DatasetPreviewResponse)
+def preview_dataset(
+    dataset_id: str,
+    datasets: Annotated[DatasetService, Depends(get_dataset_service)],
+    page: int = 1,
+    page_size: int = 50,
+) -> DatasetPreviewResponse:
+    dataset, rows = datasets.preview_dataset_rows(
+        dataset_id=dataset_id,
+        page=page,
+        page_size=page_size,
+    )
+    return DatasetPreviewResponse(
+        dataset=to_dataset_response(dataset),
+        page=page,
+        page_size=page_size,
+        total_rows=dataset.row_count,
+        rows=rows,
+    )

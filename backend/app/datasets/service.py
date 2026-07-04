@@ -40,6 +40,58 @@ class DatasetService:
     def reset(self) -> None:
         self._datasets = {}
 
+    def list_datasets(self, project_id: str) -> list[Dataset]:
+        if self.repository is None:
+            return [
+                dataset for dataset in self._datasets.values() if dataset.project_id == project_id
+            ]
+        return [
+            self._model_to_dataset(model) for model in self.repository.list_datasets(project_id)
+        ]
+
+    def get_dataset(self, dataset_id: str) -> Dataset:
+        if self.repository is None:
+            dataset = self._datasets.get(dataset_id)
+            if dataset is None:
+                raise AppError(
+                    message="Dataset not found", code="dataset_not_found", status_code=404
+                )
+            return dataset
+
+        model = self.repository.get_dataset(dataset_id)
+        if model is None:
+            raise AppError(message="Dataset not found", code="dataset_not_found", status_code=404)
+        return self._model_to_dataset(model)
+
+    def preview_dataset_rows(
+        self,
+        *,
+        dataset_id: str,
+        page: int,
+        page_size: int,
+    ) -> tuple[Dataset, list[dict[str, object | None]]]:
+        self._validate_pagination(page=page, page_size=page_size)
+        dataset = self.get_dataset(dataset_id)
+
+        if self.repository is None:
+            return dataset, []
+
+        table_map = self.repository.get_table_map(dataset_id)
+        if table_map is None:
+            raise AppError(
+                message="Dataset table mapping not found",
+                code="dataset_table_map_not_found",
+                status_code=404,
+            )
+
+        rows = self.repository.preview_rows(
+            table_name=table_map.physical_table_name,
+            fields=dataset.fields,
+            page=page,
+            page_size=page_size,
+        )
+        return dataset, rows
+
     def create_dataset(self, payload: DatasetCreateRequest) -> Dataset:
         preview = self.imports.get_preview(payload.preview_id)
         if preview is None or preview.project_id != payload.project_id:
@@ -100,6 +152,45 @@ class DatasetService:
 
         self._datasets[dataset.id] = dataset
         return dataset
+
+    def _model_to_dataset(self, model: DatasetModel) -> Dataset:
+        fields = [
+            ImportFieldPreview(
+                name=field.name,
+                inferred_type=field.data_type,
+                nullable=field.nullable,
+                order=field.order,
+            )
+            for field in self.repository.list_fields(model.id)
+        ]
+        table_map = self.repository.get_table_map(model.id)
+        if table_map is None:
+            raise AppError(
+                message="Dataset table mapping not found",
+                code="dataset_table_map_not_found",
+                status_code=404,
+            )
+        return Dataset(
+            id=model.id,
+            project_id=model.project_id,
+            name=model.name,
+            source_preview_id=model.source_preview_id or "",
+            physical_table_name=table_map.physical_table_name,
+            row_count=model.row_count,
+            fields=fields,
+        )
+
+    def _validate_pagination(self, *, page: int, page_size: int) -> None:
+        if page < 1:
+            raise AppError(
+                message="Page must be greater than 0", code="invalid_page", status_code=400
+            )
+        if page_size < 1 or page_size > 200:
+            raise AppError(
+                message="Page size must be between 1 and 200",
+                code="invalid_page_size",
+                status_code=400,
+            )
 
     def _validate_fields(self, fields: list[ImportFieldPreview]) -> None:
         names = [field.name for field in fields]

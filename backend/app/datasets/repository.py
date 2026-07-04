@@ -1,3 +1,4 @@
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.datasets.materializer import DatasetMaterializer
@@ -39,3 +40,44 @@ class DatasetRepository:
         except Exception:
             self.session.rollback()
             raise
+
+    def get_dataset(self, dataset_id: str) -> DatasetModel | None:
+        return self.session.get(DatasetModel, dataset_id)
+
+    def list_datasets(self, project_id: str) -> list[DatasetModel]:
+        return list(
+            self.session.scalars(
+                select(DatasetModel)
+                .where(DatasetModel.project_id == project_id)
+                .order_by(DatasetModel.created_at.desc())
+            )
+        )
+
+    def list_fields(self, dataset_id: str) -> list[DatasetFieldModel]:
+        return list(
+            self.session.scalars(
+                select(DatasetFieldModel)
+                .where(DatasetFieldModel.dataset_id == dataset_id)
+                .order_by(DatasetFieldModel.order)
+            )
+        )
+
+    def get_table_map(self, dataset_id: str) -> DatasetTableMapModel | None:
+        return self.session.scalar(
+            select(DatasetTableMapModel).where(DatasetTableMapModel.dataset_id == dataset_id)
+        )
+
+    def preview_rows(
+        self,
+        *,
+        table_name: str,
+        fields: list[ImportFieldPreview],
+        page: int,
+        page_size: int,
+    ) -> list[dict[str, object | None]]:
+        return DatasetMaterializer(self.session).preview_rows(
+            table_name=table_name,
+            fields=fields,
+            page=page,
+            page_size=page_size,
+        )

@@ -11,6 +11,7 @@ from sqlalchemy import (
     Table,
     Text,
     inspect,
+    select,
 )
 from sqlalchemy.orm import Session
 
@@ -65,6 +66,31 @@ class DatasetMaterializer:
                 for field in fields
             ],
         )
+
+    def preview_rows(
+        self,
+        *,
+        table_name: str,
+        fields: list[ImportFieldPreview],
+        page: int,
+        page_size: int,
+    ) -> list[dict[str, object | None]]:
+        connection = self.session.connection()
+        if not inspect(connection).has_table(table_name):
+            raise AppError(
+                message="Dataset physical table does not exist",
+                code="dataset_table_not_found",
+                status_code=404,
+            )
+
+        table = self._build_table(table_name=table_name, fields=fields)
+        statement = (
+            select(table)
+            .order_by(table.c[SYSTEM_ROW_ID])
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return [dict(row._mapping) for row in self.session.execute(statement).all()]
 
 
 def to_sqlalchemy_type(field_type: str):
