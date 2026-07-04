@@ -15,7 +15,7 @@ professional data analysis workspace
   -> later enterprise-grade data platform
 ```
 
-Current implementation has moved beyond pure planning. The repository now has backend, frontend, Docker, database model, collaboration, import preview, and dataset metadata foundations.
+Current implementation has moved beyond pure planning. The repository now has backend, frontend, Docker, database model, collaboration, import preview, formal dataset materialization, cleaning, SQL data views, chart/dashboard, audit/lineage hooks, and task center foundations.
 
 ## Implemented Documentation
 
@@ -48,6 +48,15 @@ Current implementation has moved beyond pure planning. The repository now has ba
 - Persisted uploaded-file metadata.
 - Persisted import-preview metadata and sample rows.
 - Dataset metadata creation API.
+- Formal dataset materialization into physical database tables.
+- Dataset list, detail, and paged preview APIs.
+- Visual cleaning recipe creation, preview, and execution into derived datasets.
+- SQL workspace metadata, read-only query execution, and saved SQL results as reusable data views.
+- Data view creation, list, and paged preview APIs.
+- Chart definition creation/list APIs backed by data views.
+- Dashboard/report layout creation/list APIs backed by chart resources.
+- Task center API for project-scoped workflow task status visibility.
+- Basic operation log and lineage records for implemented workflow actions.
 - Persisted dataset fields and physical table name mapping.
 
 ## Implemented Database Foundation
@@ -75,7 +84,14 @@ Initial core tables have been modeled and migrated:
 - Zustand workspace store.
 - Tailwind CSS tokens and base styling.
 - Basic app shell and navigation.
-- Placeholder workspace pages.
+- Dataset workspace page with project dataset list, schema, and paged preview.
+- Import wizard page for CSV/Excel preview and dataset creation.
+- Cleaning workbench page for visual recipe preview, save, and execution.
+- SQL workspace page for project-scoped query execution and data view saving.
+- Chart configuration page with real Data View fields and ECharts rendering.
+- Dashboard/report source page with basic free-layout report mode.
+- Task center page with project filtering, status summary, workflow coverage, and recent task table.
+- Placeholder pages remain only for features not yet implemented.
 - Frontend API client tests.
 
 ## Implemented Docker Foundation
@@ -94,19 +110,22 @@ Initial core tables have been modeled and migrated:
 - Frontend is reachable at `http://127.0.0.1:5173`.
 - Backend health check is reachable at `http://127.0.0.1:8000/api/health`.
 - Alembic migration has been applied to Docker PostgreSQL.
-- Login, project creation, member/permission creation, CSV preview upload, and dataset metadata creation were verified through the API.
-- Backend test suite previously passed.
-- Frontend test, lint, and build previously passed.
+- Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, and task center listing were verified through tests or API flows.
+- Backend test suite passed in Docker: 40 tests.
+- Frontend test suite passed: 20 tests.
+- Frontend lint passed.
+- Frontend build previously passed and should be rerun after each UI milestone.
 
 ## Current Limitations
 
-- Uploaded file metadata is persisted, but original file bytes are not yet saved to durable storage.
-- Import preview stores sample rows, not the complete parsed dataset.
-- Dataset creation persists metadata and a table mapping, but does not yet create/populate the physical dataset table.
-- Operation log and lineage tables exist, but product workflows do not yet write records into them.
-- Task center tables exist, but task execution and status flow are not yet implemented.
+- Uploaded file bytes are saved in durable local storage, with metadata in PostgreSQL.
+- Import preview stores sample rows for confirmation before formal dataset creation.
+- Formal dataset creation creates and populates a physical table.
+- Operation logs and lineage records exist for the implemented workflow actions, but the lineage graph UI is not implemented yet.
+- Task center records synchronous workflow actions as completed tasks; pending/running/retry flows are reserved for the later queue-backed implementation.
 - Authentication is still development-oriented and not production JWT/auth hardening.
-- Frontend pages are still mostly shell/placeholder pages.
+- External database import/connectors and API data sources are still reserved for later milestones.
+- Scheduled sync and distributed worker execution are not implemented yet.
 
 ## Updated Engineering Constraints
 
@@ -121,12 +140,11 @@ Future work must preserve these boundaries:
 
 ## Recommended Next Build Step
 
-The next implementation step should strengthen the import-to-dataset foundation:
+The next implementation step should strengthen Task Center and traceability from MVP records toward operational workflows:
 
-1. Save original uploaded files to durable local storage using `upload_storage_root`.
-2. Store real storage paths in `uploaded_files.storage_path`.
-3. Add operation logs for file preview creation and dataset creation.
-4. Add a lineage edge from uploaded file/import preview to dataset.
-5. Then implement formal dataset physical table creation and row insertion.
+1. Add task failure recording around high-risk actions such as import parsing, cleaning execution, and SQL materialization.
+2. Add retry entry semantics for retryable tasks without introducing a distributed worker yet.
+3. Add task center links from related resources to datasets, data views, charts, and dashboards.
+4. Then implement the external database read-only connector MVP.
 
-This order supports the user's new requirements: clear structure, traceability, and lower risk of data loss.
+This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

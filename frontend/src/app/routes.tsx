@@ -5,6 +5,7 @@ import { DataViewSourcePage } from "../features/dataViews/DataViewSourcePage";
 import { DatasetPage } from "../features/datasets/DatasetPage";
 import { ImportWizardPage } from "../features/imports/ImportWizardPage";
 import { SqlWorkspacePage } from "../features/sql/SqlWorkspacePage";
+import { TaskCenterPage } from "../features/tasks/TaskCenterPage";
 import { PlaceholderPage } from "./PlaceholderPage";
 
 export const routePlaceholders: Record<string, ReactNode> = {
@@ -26,10 +27,5 @@ export const routePlaceholders: Record<string, ReactNode> = {
   "/sql": <SqlWorkspacePage />,
   "/charts": <DataViewSourcePage mode="charts" />,
   "/dashboards": <DataViewSourcePage mode="dashboards" />,
-  "/tasks": (
-    <PlaceholderPage
-      title="Task center"
-      description="Track imports, cleaning runs, SQL materialization, errors, and retries."
-    />
-  ),
+  "/tasks": <TaskCenterPage />,
 };

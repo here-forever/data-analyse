@@ -13,6 +13,8 @@ from app.imports.repository import ImportRepository
 from app.imports.schemas import FilePreviewResponse
 from app.imports.service import FilePreview, ImportService
 from app.imports.storage import LocalFileStorage
+from app.tasks.repository import TaskRepository
+from app.tasks.service import TaskService
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -27,6 +29,7 @@ def get_import_service(
         uploader_id=current_user.id,
         storage=LocalFileStorage(settings.upload_storage_root),
         audit=AuditService(AuditRepository(session), actor_id=current_user.id),
+        tasks=TaskService(TaskRepository(session), initiator_id=current_user.id),
     )
 
 

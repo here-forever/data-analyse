@@ -21,6 +21,8 @@ from app.cleaning.service import CleaningService
 from app.core.database import get_db_session
 from app.datasets.repository import DatasetRepository
 from app.datasets.service import DatasetService
+from app.tasks.repository import TaskRepository
+from app.tasks.service import TaskService
 
 router = APIRouter(prefix="/cleaning", tags=["cleaning"])
 
@@ -30,8 +32,14 @@ def get_cleaning_service(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> CleaningService:
     audit = AuditService(AuditRepository(session), actor_id=current_user.id)
-    datasets = DatasetService(DatasetRepository(session), audit=audit)
-    return CleaningService(CleaningRepository(session), datasets=datasets, audit=audit)
+    tasks = TaskService(TaskRepository(session), initiator_id=current_user.id)
+    datasets = DatasetService(DatasetRepository(session), audit=audit, tasks=tasks)
+    return CleaningService(
+        CleaningRepository(session),
+        datasets=datasets,
+        audit=audit,
+        tasks=tasks,
+    )
 
 
 @router.post(

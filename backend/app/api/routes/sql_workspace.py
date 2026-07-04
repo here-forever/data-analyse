@@ -20,6 +20,8 @@ from app.sql_workspace.schemas import (
     SqlWorkspaceMetadataResponse,
 )
 from app.sql_workspace.service import SqlWorkspaceService
+from app.tasks.repository import TaskRepository
+from app.tasks.service import TaskService
 
 router = APIRouter(prefix="/sql", tags=["sql"])
 
@@ -31,11 +33,13 @@ def get_sql_workspace_service(
     audit = AuditService(AuditRepository(session), actor_id=current_user.id)
     datasets = DatasetService(DatasetRepository(session), audit=audit)
     data_views = DataViewService(DataViewRepository(session), audit=audit)
+    tasks = TaskService(TaskRepository(session), initiator_id=current_user.id)
     return SqlWorkspaceService(
         session=session,
         datasets=datasets,
         data_views=data_views,
         audit=audit,
+        tasks=tasks,
     )
 
 

@@ -17,6 +17,7 @@ from app.sql_workspace.schemas import (
     SqlSaveDataViewRequest,
     SqlWorkspaceMetadataResponse,
 )
+from app.tasks.service import TaskService
 
 READ_ONLY_STARTERS = ("select", "with")
 DANGEROUS_SQL_PATTERN = re.compile(
@@ -34,11 +35,13 @@ class SqlWorkspaceService:
         datasets: DatasetService,
         data_views: DataViewService | None = None,
         audit: AuditService | None = None,
+        tasks: TaskService | None = None,
     ) -> None:
         self.session = session
         self.datasets = datasets
         self.data_views = data_views
         self.audit = audit
+        self.tasks = tasks
 
     def metadata(self, project_id: str) -> SqlWorkspaceMetadataResponse:
         datasets = self.datasets.list_datasets(project_id)
@@ -104,6 +107,11 @@ class SqlWorkspaceService:
             sql=payload.sql,
             data_view_id=data_view.id,
             row_count=len(rows),
+        )
+        self._record_sql_save_task(
+            project_id=payload.project_id,
+            data_view_id=data_view.id,
+            data_view_name=data_view.name,
         )
         return data_view
 
@@ -172,6 +180,24 @@ class SqlWorkspaceService:
                 "sql": sql,
                 "row_count": row_count,
             },
+        )
+
+    def _record_sql_save_task(
+        self,
+        *,
+        project_id: str,
+        data_view_id: str,
+        data_view_name: str,
+    ) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_success(
+            project_id=project_id,
+            name=f"Materialized SQL data view: {data_view_name}",
+            task_type="sql_data_view_materialization",
+            related_resource_type="data_view",
+            related_resource_id=data_view_id,
         )
 
 

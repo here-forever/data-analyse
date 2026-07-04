@@ -7,6 +7,7 @@ from app.core.ids import new_id
 from app.data_views.service import DataViewService
 from app.models.data_view import ChartDefinition as ChartDefinitionModel
 from app.models.data_view import DashboardDefinition as DashboardDefinitionModel
+from app.tasks.service import TaskService
 from app.visualizations.repository import VisualizationRepository
 from app.visualizations.schemas import (
     ChartCreateRequest,
@@ -41,10 +42,12 @@ class VisualizationService:
         repository: VisualizationRepository | None = None,
         data_views: DataViewService | None = None,
         audit: AuditService | None = None,
+        tasks: TaskService | None = None,
     ) -> None:
         self.repository = repository
         self.data_views = data_views
         self.audit = audit
+        self.tasks = tasks
         self._charts: dict[str, Chart] = {}
         self._dashboards: dict[str, Dashboard] = {}
 
@@ -87,6 +90,7 @@ class VisualizationService:
             self._charts[chart.id] = chart
 
         self._record_chart_audit(chart)
+        self._record_chart_task(chart)
         return chart
 
     def list_charts(self, project_id: str) -> list[Chart]:
@@ -147,6 +151,7 @@ class VisualizationService:
             dashboard=dashboard,
             referenced_chart_ids=referenced_chart_ids,
         )
+        self._record_dashboard_task(dashboard)
         return dashboard
 
     def list_dashboards(self, project_id: str) -> list[Dashboard]:
@@ -242,6 +247,31 @@ class VisualizationService:
                 transform_type=f"{mode}_layout",
                 transform_id=dashboard.id,
             )
+
+    def _record_chart_task(self, chart: Chart) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_success(
+            project_id=chart.project_id,
+            name=f"Saved chart: {chart.name}",
+            task_type="chart_save",
+            related_resource_type="chart",
+            related_resource_id=chart.id,
+        )
+
+    def _record_dashboard_task(self, dashboard: Dashboard) -> None:
+        if self.tasks is None:
+            return
+
+        mode = dashboard.layout.get("mode", "dashboard")
+        self.tasks.record_success(
+            project_id=dashboard.project_id,
+            name=f"Saved {mode}: {dashboard.name}",
+            task_type="dashboard_save",
+            related_resource_type="dashboard",
+            related_resource_id=dashboard.id,
+        )
 
 
 def extract_chart_ids(value: Any) -> set[str]:

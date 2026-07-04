@@ -20,6 +20,7 @@ from app.datasets.service import Dataset, DatasetService, dataset_service
 from app.imports.schemas import ImportFieldPreview
 from app.models.cleaning import CleaningRecipe as CleaningRecipeModel
 from app.models.cleaning import CleaningStep as CleaningStepModel
+from app.tasks.service import TaskService
 
 
 @dataclass(frozen=True)
@@ -38,10 +39,12 @@ class CleaningService:
         repository: CleaningRepository | None = None,
         datasets: DatasetService = dataset_service,
         audit: AuditService | None = None,
+        tasks: TaskService | None = None,
     ) -> None:
         self.repository = repository
         self.datasets = datasets
         self.audit = audit
+        self.tasks = tasks
         self._recipes: dict[str, CleaningRecipe] = {}
 
     def reset(self) -> None:
@@ -186,6 +189,10 @@ class CleaningService:
             lineage_transform_id=recipe.id,
         )
         self._record_recipe_execution(recipe=recipe, derived_dataset_id=derived_dataset.id)
+        self._record_recipe_execution_task(
+            recipe=recipe,
+            derived_dataset_id=derived_dataset.id,
+        )
 
         return CleaningExecuteResponse(
             recipe_id=recipe.id,
@@ -279,6 +286,23 @@ class CleaningService:
             target_id=recipe.id,
             transform_type="cleaning_recipe",
             transform_id=recipe.id,
+        )
+
+    def _record_recipe_execution_task(
+        self,
+        *,
+        recipe: CleaningRecipeResponse,
+        derived_dataset_id: str,
+    ) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_success(
+            project_id=recipe.project_id,
+            name=f"Executed cleaning recipe: {recipe.name}",
+            task_type="cleaning_recipe_execution",
+            related_resource_type="dataset",
+            related_resource_id=derived_dataset_id,
         )
 
     def _record_recipe_execution(

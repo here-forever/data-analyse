@@ -12,6 +12,7 @@ from app.imports.service import ImportService, import_service
 from app.models.dataset import Dataset as DatasetModel
 from app.models.dataset import DatasetField as DatasetFieldModel
 from app.models.dataset import DatasetTableMap as DatasetTableMapModel
+from app.tasks.service import TaskService
 
 
 @dataclass(frozen=True)
@@ -31,10 +32,12 @@ class DatasetService:
         repository: DatasetRepository | None = None,
         imports: ImportService = import_service,
         audit: AuditService | None = None,
+        tasks: TaskService | None = None,
     ) -> None:
         self.repository = repository
         self.imports = imports
         self.audit = audit
+        self.tasks = tasks
         self._datasets: dict[str, Dataset] = {}
 
     def reset(self) -> None:
@@ -168,6 +171,7 @@ class DatasetService:
                 materialized_rows=materialized_rows,
             )
             self._record_dataset_audit(dataset)
+            self._record_dataset_task(dataset, task_type="dataset_materialization")
             return dataset
 
         self._datasets[dataset.id] = dataset
@@ -236,6 +240,10 @@ class DatasetService:
                 target_dataset=dataset,
                 transform_type=lineage_transform_type,
                 transform_id=lineage_transform_id,
+            )
+            self._record_dataset_task(
+                dataset,
+                task_type="derived_dataset_materialization",
             )
             return dataset
 
@@ -388,6 +396,18 @@ class DatasetService:
             target_id=target_dataset.id,
             transform_type=transform_type,
             transform_id=transform_id,
+        )
+
+    def _record_dataset_task(self, dataset: Dataset, *, task_type: str) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_success(
+            project_id=dataset.project_id,
+            name=f"Materialized dataset: {dataset.name}",
+            task_type=task_type,
+            related_resource_type="dataset",
+            related_resource_id=dataset.id,
         )
 
 

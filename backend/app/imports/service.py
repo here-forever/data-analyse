@@ -11,6 +11,7 @@ from app.imports.schemas import ImportFieldPreview
 from app.imports.storage import LocalFileStorage
 from app.models.imports import FileImportPreview as FileImportPreviewModel
 from app.models.imports import UploadedFile as UploadedFileModel
+from app.tasks.service import TaskService
 
 SAMPLE_ROW_LIMIT = 20
 
@@ -35,11 +36,13 @@ class ImportService:
         uploader_id: str | None = None,
         storage: LocalFileStorage | None = None,
         audit: AuditService | None = None,
+        tasks: TaskService | None = None,
     ) -> None:
         self.repository = repository
         self.uploader_id = uploader_id
         self.storage = storage
         self.audit = audit
+        self.tasks = tasks
         self._previews: dict[str, FilePreview] = {}
 
     def reset(self) -> None:
@@ -107,6 +110,7 @@ class ImportService:
                 preview=preview,
                 uploaded_file_id=uploaded_file_id,
             )
+            self._record_preview_task(preview)
             return model_to_preview(saved_preview)
 
         self._previews[preview.id] = preview
@@ -200,6 +204,18 @@ class ImportService:
             target_id=preview.id,
             transform_type="file_parse_preview",
             transform_id=preview.id,
+        )
+
+    def _record_preview_task(self, preview: FilePreview) -> None:
+        if self.tasks is None:
+            return
+
+        self.tasks.record_success(
+            project_id=preview.project_id,
+            name=f"Parsed file preview: {preview.file_name}",
+            task_type="file_preview_parse",
+            related_resource_type="file_import_preview",
+            related_resource_id=preview.id,
         )
 
 

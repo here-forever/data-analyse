@@ -10,6 +10,8 @@ from app.auth.service import User
 from app.core.database import get_db_session
 from app.data_views.repository import DataViewRepository
 from app.data_views.service import DataViewService
+from app.tasks.repository import TaskRepository
+from app.tasks.service import TaskService
 from app.visualizations.repository import VisualizationRepository
 from app.visualizations.schemas import (
     DashboardCreateRequest,
@@ -27,10 +29,12 @@ def get_visualization_service(
 ) -> VisualizationService:
     audit = AuditService(AuditRepository(session), actor_id=current_user.id)
     data_views = DataViewService(DataViewRepository(session), audit=audit)
+    tasks = TaskService(TaskRepository(session), initiator_id=current_user.id)
     return VisualizationService(
         repository=VisualizationRepository(session),
         data_views=data_views,
         audit=audit,
+        tasks=tasks,
     )
 
 

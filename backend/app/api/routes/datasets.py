@@ -18,6 +18,8 @@ from app.datasets.schemas import (
 from app.datasets.service import Dataset, DatasetService
 from app.imports.repository import ImportRepository
 from app.imports.service import ImportService
+from app.tasks.repository import TaskRepository
+from app.tasks.service import TaskService
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
@@ -28,7 +30,8 @@ def get_dataset_service(
 ) -> DatasetService:
     imports = ImportService(ImportRepository(session))
     audit = AuditService(AuditRepository(session), actor_id=current_user.id)
-    return DatasetService(DatasetRepository(session), imports, audit=audit)
+    tasks = TaskService(TaskRepository(session), initiator_id=current_user.id)
+    return DatasetService(DatasetRepository(session), imports, audit=audit, tasks=tasks)
 
 
 def to_dataset_response(dataset: Dataset) -> DatasetResponse:

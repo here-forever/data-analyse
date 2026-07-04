@@ -16,6 +16,7 @@ from app.imports.service import import_service
 from app.main import create_app
 from app.permissions.service import permission_service
 from app.projects.service import project_service
+from app.tasks.service import task_service
 from app.visualizations.service import visualization_service
 
 
@@ -28,6 +29,7 @@ def reset_development_services() -> None:
     dataset_service.reset()
     cleaning_service.reset()
     data_view_service.reset()
+    task_service.reset()
     visualization_service.reset()
 
 
