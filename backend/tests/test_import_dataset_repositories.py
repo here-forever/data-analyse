@@ -1,0 +1,94 @@
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.auth.repository import AuthRepository
+from app.auth.service import AuthService
+from app.core.database import Base, import_models
+from app.datasets.repository import DatasetRepository
+from app.datasets.schemas import DatasetCreateRequest
+from app.datasets.service import DatasetService
+from app.imports.repository import ImportRepository
+from app.imports.service import ImportService
+from app.models.dataset import DatasetField as DatasetFieldModel
+from app.models.dataset import DatasetTableMap as DatasetTableMapModel
+from app.models.imports import FileImportPreview as FileImportPreviewModel
+from app.models.imports import UploadedFile as UploadedFileModel
+from app.projects.repository import ProjectRepository
+from app.projects.service import ProjectService
+
+
+def create_test_session() -> Session:
+    import_models()
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    return session_factory()
+
+
+def create_project(session: Session) -> tuple[str, str]:
+    auth = AuthService(AuthRepository(session))
+    owner = auth.get_or_create_default_admin()
+    project = ProjectService(ProjectRepository(session), auth).create_project(
+        name="Import Persistence",
+        description=None,
+        owner=owner,
+    )
+    return project.id, owner.id
+
+
+def test_import_repository_persists_uploaded_file_and_preview() -> None:
+    session = create_test_session()
+    project_id, uploader_id = create_project(session)
+    service = ImportService(ImportRepository(session), uploader_id=uploader_id)
+
+    preview = service.create_file_preview(
+        project_id=project_id,
+        file_name="sales.csv",
+        content=b"order_id,amount\n1,19.5\n2,42.0\n",
+    )
+
+    uploaded_file = session.scalar(
+        select(UploadedFileModel).where(UploadedFileModel.file_name == "sales.csv")
+    )
+    saved_preview = session.get(FileImportPreviewModel, preview.id)
+
+    assert uploaded_file is not None
+    assert saved_preview is not None
+    assert saved_preview.uploaded_file_id == uploaded_file.id
+    assert saved_preview.fields[0]["name"] == "order_id"
+
+
+def test_dataset_repository_persists_dataset_fields_and_table_map() -> None:
+    session = create_test_session()
+    project_id, uploader_id = create_project(session)
+    import_service = ImportService(ImportRepository(session), uploader_id=uploader_id)
+    preview = import_service.create_file_preview(
+        project_id=project_id,
+        file_name="sales.csv",
+        content=b"order_id,amount\n1,19.5\n2,42.0\n",
+    )
+    dataset_service = DatasetService(DatasetRepository(session), import_service)
+
+    dataset = dataset_service.create_dataset(
+        DatasetCreateRequest(
+            project_id=project_id,
+            preview_id=preview.id,
+            name="Sales Orders",
+            fields=preview.fields,
+        )
+    )
+
+    fields = list(
+        session.scalars(
+            select(DatasetFieldModel)
+            .where(DatasetFieldModel.dataset_id == dataset.id)
+            .order_by(DatasetFieldModel.order)
+        )
+    )
+    table_map = session.scalar(
+        select(DatasetTableMapModel).where(DatasetTableMapModel.dataset_id == dataset.id)
+    )
+
+    assert [field.name for field in fields] == ["order_id", "amount"]
+    assert table_map is not None
+    assert table_map.physical_table_name == dataset.physical_table_name

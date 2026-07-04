@@ -1,13 +1,23 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.auth.service import User
+from app.core.database import get_db_session
+from app.imports.repository import ImportRepository
 from app.imports.schemas import FilePreviewResponse
-from app.imports.service import FilePreview, import_service
+from app.imports.service import FilePreview, ImportService
 
 router = APIRouter(prefix="/imports", tags=["imports"])
+
+
+def get_import_service(
+    session: Annotated[Session, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ImportService:
+    return ImportService(ImportRepository(session), uploader_id=current_user.id)
 
 
 def to_file_preview_response(preview: FilePreview) -> FilePreviewResponse:
@@ -28,12 +38,12 @@ def to_file_preview_response(preview: FilePreview) -> FilePreviewResponse:
     status_code=status.HTTP_201_CREATED,
 )
 async def create_file_preview(
-    _current_user: Annotated[User, Depends(get_current_user)],
     project_id: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
+    imports: Annotated[ImportService, Depends(get_import_service)],
 ) -> FilePreviewResponse:
     content = await file.read()
-    preview = import_service.create_file_preview(
+    preview = imports.create_file_preview(
         project_id=project_id,
         file_name=file.filename or "uploaded_file",
         content=content,

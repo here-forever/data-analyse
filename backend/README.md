@@ -68,7 +68,7 @@ Current local development import endpoints include:
 - `POST /api/imports/file-previews`
 - `POST /api/datasets`
 
-The import preview endpoint supports CSV and Excel files, returns inferred fields, row count, and sample rows. Dataset creation currently records development metadata from a confirmed preview. Physical PostgreSQL dataset tables will be added when the database milestone is implemented.
+The import preview endpoint supports CSV and Excel files, returns inferred fields, row count, and sample rows. Import previews, uploaded file metadata, dataset metadata, dataset fields, and dataset table maps use SQLAlchemy repositories. Physical PostgreSQL dataset data tables will be added in the next dataset materialization step.
 
 ## Docker Development
 
