@@ -5,14 +5,31 @@ import { MemoryRouter } from "react-router-dom";
 
 import { createQueryClient } from "../app/queryClient";
 
-function Providers({ children }: PropsWithChildren) {
+interface TestProvidersProps extends PropsWithChildren {
+  route?: string;
+}
+
+interface RenderWithProvidersOptions extends RenderOptions {
+  route?: string;
+}
+
+function Providers({ children, route = "/" }: TestProvidersProps) {
   return (
     <QueryClientProvider client={createQueryClient()}>
-      <MemoryRouter>{children}</MemoryRouter>
+      <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
     </QueryClientProvider>
   );
 }
 
-export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
-  return render(ui, { wrapper: Providers, ...options });
+export function renderWithProviders(
+  ui: ReactElement,
+  options?: RenderWithProvidersOptions,
+) {
+  const { route, ...renderOptions } = options ?? {};
+
+  function Wrapper({ children }: PropsWithChildren) {
+    return <Providers route={route}>{children}</Providers>;
+  }
+
+  return render(ui, { wrapper: Wrapper, ...renderOptions });
 }

@@ -201,7 +201,7 @@ export function ImportWizardPage() {
                   />
                   <Link
                     className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-emerald/30 bg-white px-4 text-sm font-semibold text-emerald transition hover:bg-emerald/10"
-                    to="/datasets"
+                    to={`/datasets?project_id=${encodeURIComponent(datasetMutation.data.project_id)}&dataset_id=${encodeURIComponent(datasetMutation.data.id)}`}
                   >
                     Open dataset workspace
                     <ArrowRight className="h-4 w-4" />

@@ -105,6 +105,12 @@ describe("ImportWizardPage", () => {
     expect(
       await screen.findByText("Created Sales (2 rows)"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Open dataset workspace/i }),
+    ).toHaveAttribute(
+      "href",
+      "/datasets?project_id=prj_demo&dataset_id=dataset_1",
+    );
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });

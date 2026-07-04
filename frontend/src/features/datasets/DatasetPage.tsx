@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Database, RefreshCcw, Search, Table2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { getDatasetPreview, listDatasets, type Dataset } from "./api";
 
@@ -8,9 +9,12 @@ const DEFAULT_PROJECT_ID = "prj_demo";
 const PAGE_SIZE = 20;
 
 export function DatasetPage() {
-  const [projectId, setProjectId] = useState(DEFAULT_PROJECT_ID);
-  const [submittedProjectId, setSubmittedProjectId] = useState(DEFAULT_PROJECT_ID);
-  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const initialProjectId = searchParams.get("project_id") ?? DEFAULT_PROJECT_ID;
+  const initialDatasetId = searchParams.get("dataset_id");
+  const [projectId, setProjectId] = useState(initialProjectId);
+  const [submittedProjectId, setSubmittedProjectId] = useState(initialProjectId);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(initialDatasetId);
   const [page, setPage] = useState(1);
 
   const datasetsQuery = useQuery({

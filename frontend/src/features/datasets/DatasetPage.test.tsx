@@ -94,6 +94,79 @@ describe("DatasetPage", () => {
       );
     });
   });
+
+  test("loads project and selected dataset from route query parameters", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.includes("/datasets?")) {
+        return Promise.resolve(
+          jsonResponse({
+            items: [
+              {
+                id: "dataset_1",
+                project_id: "prj_target",
+                name: "Old Dataset",
+                source_preview_id: "preview_1",
+                physical_table_name: "ds_old",
+                row_count: 1,
+                fields: [{ name: "id", inferred_type: "integer", nullable: false, order: 0 }],
+              },
+              {
+                id: "dataset_2",
+                project_id: "prj_target",
+                name: "Imported Dataset",
+                source_preview_id: "preview_2",
+                physical_table_name: "ds_imported",
+                row_count: 1,
+                fields: [{ name: "amount", inferred_type: "decimal", nullable: false, order: 0 }],
+              },
+            ],
+          }),
+        );
+      }
+
+      if (url.includes("/datasets/dataset_2/preview")) {
+        return Promise.resolve(
+          jsonResponse({
+            dataset: {
+              id: "dataset_2",
+              project_id: "prj_target",
+              name: "Imported Dataset",
+              source_preview_id: "preview_2",
+              physical_table_name: "ds_imported",
+              row_count: 1,
+              fields: [{ name: "amount", inferred_type: "decimal", nullable: false, order: 0 }],
+            },
+            page: 1,
+            page_size: 20,
+            total_rows: 1,
+            rows: [{ _das_row_id: 1, amount: 88.8 }],
+          }),
+        );
+      }
+
+      return Promise.resolve(jsonResponse({}));
+    });
+
+    renderWithProviders(<DatasetPage />, {
+      route: "/datasets?project_id=prj_target&dataset_id=dataset_2",
+    });
+
+    expect(screen.getByLabelText("Project ID")).toHaveValue("prj_target");
+    expect(await screen.findByText("Imported Dataset")).toBeInTheDocument();
+    expect(await screen.findByText("88.8")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/api/datasets?project_id=prj_target",
+        expect.any(Object),
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/api/datasets/dataset_2/preview?page=1&page_size=20",
+        expect.any(Object),
+      );
+    });
+  });
 });
 
 function jsonResponse(payload: unknown): Response {
