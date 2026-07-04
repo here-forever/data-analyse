@@ -18,6 +18,43 @@ describe("ImportWizardPage", () => {
       (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
 
+        if (url.includes("/imports/uploads")) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  id: "file_1",
+                  project_id: "prj_demo",
+                  uploader_id: "usr_admin",
+                  file_name: "sales.csv",
+                  file_type: "csv",
+                  size_bytes: 29,
+                  status: "parsed",
+                  error_message: null,
+                  preview_id: "preview_1",
+                  preview_row_count: 2,
+                  created_at: "2026-07-04T10:00:00Z",
+                  updated_at: "2026-07-04T10:00:01Z",
+                },
+                {
+                  id: "file_2",
+                  project_id: "prj_demo",
+                  uploader_id: "usr_admin",
+                  file_name: "notes.txt",
+                  file_type: "txt",
+                  size_bytes: 5,
+                  status: "failed",
+                  error_message: "Only CSV and Excel files are supported",
+                  preview_id: null,
+                  preview_row_count: null,
+                  created_at: "2026-07-04T09:00:00Z",
+                  updated_at: "2026-07-04T09:00:01Z",
+                },
+              ],
+            }),
+          );
+        }
+
         if (url.endsWith("/imports/file-previews")) {
           expect(init?.body).toBeInstanceOf(FormData);
           return Promise.resolve(
@@ -93,8 +130,13 @@ describe("ImportWizardPage", () => {
     await user.click(screen.getByRole("button", { name: "Create preview" }));
 
     await screen.findByText("19.5");
-    expect(screen.getAllByText("sales.csv")).toHaveLength(2);
+    expect(screen.getAllByText("sales.csv")).toHaveLength(3);
     expect(screen.getByText("19.5")).toBeInTheDocument();
+    expect(screen.getByText("Upload history")).toBeInTheDocument();
+    expect(screen.getByText("notes.txt")).toBeInTheDocument();
+    expect(
+      screen.getByText("Only CSV and Excel files are supported"),
+    ).toBeInTheDocument();
 
     const amountInput = screen.getByDisplayValue("amount");
     await user.clear(amountInput);
@@ -114,7 +156,10 @@ describe("ImportWizardPage", () => {
       "/datasets?project_id=prj_demo&dataset_id=dataset_1",
     );
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/imports/uploads"),
+        expect.objectContaining({ method: "GET" }),
+      );
     });
   });
 });

@@ -13,6 +13,27 @@ export interface FilePreview {
   sample_rows: Array<Record<string, string | number | boolean | null>>;
 }
 
+export type UploadStatus = "pending" | "parsed" | "failed";
+
+export interface UploadRecord {
+  id: string;
+  project_id: string;
+  uploader_id: string;
+  file_name: string;
+  file_type: string;
+  size_bytes: number;
+  status: UploadStatus;
+  error_message: string | null;
+  preview_id: string | null;
+  preview_row_count: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UploadListResponse {
+  items: UploadRecord[];
+}
+
 export interface DatasetCreatePayload {
   project_id: string;
   preview_id: string;
@@ -29,6 +50,14 @@ export async function createFilePreview(
   body.set("file", file);
 
   return apiClient.postForm<FilePreview>("/imports/file-previews", body);
+}
+
+export async function listUploads(
+  projectId: string,
+): Promise<UploadListResponse> {
+  return apiClient.get<UploadListResponse>("/imports/uploads", {
+    project_id: projectId,
+  });
 }
 
 export async function createDataset(

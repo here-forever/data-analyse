@@ -1,17 +1,28 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   CheckCircle2,
+  Clock3,
   FileSpreadsheet,
+  History,
   Info,
   RefreshCcw,
+  Search,
+  XCircle,
   UploadCloud,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import type { DatasetField } from "../datasets/api";
-import { createDataset, createFilePreview, type FilePreview } from "./api";
+import {
+  createDataset,
+  createFilePreview,
+  listUploads,
+  type FilePreview,
+  type UploadRecord,
+  type UploadStatus,
+} from "./api";
 
 const DEFAULT_PROJECT_ID = "prj_demo";
 const FIELD_TYPES: DatasetField["inferred_type"][] = [
@@ -24,11 +35,20 @@ const FIELD_TYPES: DatasetField["inferred_type"][] = [
 ];
 
 export function ImportWizardPage() {
+  const queryClient = useQueryClient();
   const [projectId, setProjectId] = useState(DEFAULT_PROJECT_ID);
+  const [submittedProjectId, setSubmittedProjectId] =
+    useState(DEFAULT_PROJECT_ID);
   const [datasetName, setDatasetName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [fields, setFields] = useState<DatasetField[]>([]);
+
+  const uploadsQuery = useQuery({
+    queryKey: ["import-uploads", submittedProjectId],
+    queryFn: () => listUploads(submittedProjectId),
+    enabled: submittedProjectId.trim().length > 0,
+  });
 
   const previewMutation = useMutation({
     mutationFn: () => {
@@ -38,11 +58,22 @@ export function ImportWizardPage() {
       return createFilePreview(projectId.trim(), selectedFile);
     },
     onSuccess: (result) => {
+      setSubmittedProjectId(result.project_id);
       setPreview(result);
       setFields(result.fields);
       setDatasetName(
         (current) => current || cleanDatasetName(result.file_name),
       );
+      void queryClient.invalidateQueries({
+        queryKey: ["import-uploads", result.project_id],
+      });
+    },
+    onError: () => {
+      const nextProjectId = projectId.trim();
+      setSubmittedProjectId(nextProjectId);
+      void queryClient.invalidateQueries({
+        queryKey: ["import-uploads", nextProjectId],
+      });
     },
   });
 
@@ -79,6 +110,16 @@ export function ImportWizardPage() {
     [fields, preview?.fields],
   );
 
+  function submitProject(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextProjectId = projectId.trim();
+    setSubmittedProjectId(nextProjectId);
+    setPreview(null);
+    setFields([]);
+    datasetMutation.reset();
+    previewMutation.reset();
+  }
+
   function updateField(index: number, patch: Partial<DatasetField>) {
     setFields((current) =>
       current.map((field, fieldIndex) =>
@@ -107,16 +148,32 @@ export function ImportWizardPage() {
         <aside className="space-y-5">
           <Panel title="Upload source">
             <div className="space-y-4">
-              <label className="block">
-                <span className="text-xs font-semibold uppercase text-muted">
+              <form className="space-y-2" onSubmit={submitProject}>
+                <label
+                  className="text-xs font-semibold uppercase text-muted"
+                  htmlFor="import-project-id"
+                >
                   Project ID
-                </span>
-                <input
-                  className="mt-2 h-10 w-full rounded-md border border-line bg-white px-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
-                  value={projectId}
-                  onChange={(event) => setProjectId(event.target.value)}
-                />
-              </label>
+                </label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                    <input
+                      id="import-project-id"
+                      className="h-10 w-full rounded-md border border-line bg-white pl-9 pr-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+                      value={projectId}
+                      onChange={(event) => setProjectId(event.target.value)}
+                    />
+                  </div>
+                  <button
+                    className="inline-flex h-10 items-center gap-2 rounded-md border border-brand/20 bg-blue-50 px-3 text-sm font-semibold text-brand transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={projectId.trim().length === 0}
+                    type="submit"
+                  >
+                    Load
+                  </button>
+                </div>
+              </form>
 
               <label className="block">
                 <span className="text-xs font-semibold uppercase text-muted">
@@ -224,6 +281,18 @@ export function ImportWizardPage() {
           <SampleRows preview={preview} columns={sampleColumns} />
         </div>
       </div>
+
+      <UploadHistoryPanel
+        error={uploadsQuery.error}
+        isLoading={uploadsQuery.isLoading || uploadsQuery.isFetching}
+        projectId={submittedProjectId}
+        uploads={uploadsQuery.data?.items ?? []}
+        onRefresh={() =>
+          void queryClient.invalidateQueries({
+            queryKey: ["import-uploads", submittedProjectId],
+          })
+        }
+      />
     </section>
   );
 }
@@ -413,6 +482,164 @@ function SampleRows({
   );
 }
 
+function UploadHistoryPanel({
+  uploads,
+  projectId,
+  isLoading,
+  error,
+  onRefresh,
+}: {
+  uploads: UploadRecord[];
+  projectId: string;
+  isLoading: boolean;
+  error: Error | null;
+  onRefresh: () => void;
+}) {
+  const summary = useMemo(() => summarizeUploads(uploads), [uploads]);
+
+  return (
+    <div className="overflow-hidden rounded-md border border-line bg-panel shadow-panel">
+      <div className="flex flex-col gap-3 border-b border-line px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="rounded-md border border-cyan/20 bg-cyan/10 p-2 text-cyan">
+            <History className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Upload history</h3>
+            <p className="mt-1 text-xs text-muted">
+              Project {projectId || "-"} keeps successful and failed file access
+              attempts traceable.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <HistoryMetric
+            label="Total"
+            value={summary.total.toLocaleString()}
+            tone="brand"
+          />
+          <HistoryMetric
+            label="Parsed"
+            value={summary.parsed.toLocaleString()}
+            tone="emerald"
+          />
+          <HistoryMetric
+            label="Failed"
+            value={summary.failed.toLocaleString()}
+            tone="amber"
+          />
+          <button
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-line bg-white px-3 text-xs font-semibold text-muted transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={isLoading}
+            onClick={onRefresh}
+            type="button"
+          >
+            <RefreshCcw className="h-3.5 w-3.5" />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="p-4">
+          <StateMessage title="Loading upload records" />
+        </div>
+      ) : error ? (
+        <div className="p-4">
+          <StateMessage title="Could not load upload records" tone="error" />
+        </div>
+      ) : uploads.length === 0 ? (
+        <div className="p-4">
+          <StateMessage title="No upload records found for this project" />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-muted">
+              <tr>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  File
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Status
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Size
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Preview
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Uploaded
+                </th>
+                <th className="border-b border-line px-4 py-3 font-semibold">
+                  Trace
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {uploads.map((upload) => (
+                <UploadHistoryRow key={upload.id} upload={upload} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UploadHistoryRow({ upload }: { upload: UploadRecord }) {
+  return (
+    <tr className="align-top hover:bg-slate-50">
+      <td className="border-b border-line px-4 py-3">
+        <p className="max-w-xs truncate font-semibold text-ink">
+          {upload.file_name}
+        </p>
+        <p className="mt-1 font-mono text-xs text-muted">{upload.id}</p>
+        {upload.error_message ? (
+          <p className="mt-2 max-w-md rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs leading-5 text-red-700">
+            {upload.error_message}
+          </p>
+        ) : null}
+      </td>
+      <td className="border-b border-line px-4 py-3">
+        <UploadStatusChip status={upload.status} />
+        <p className="mt-2 text-xs uppercase text-muted">
+          {upload.file_type || "unknown"}
+        </p>
+      </td>
+      <td className="border-b border-line px-4 py-3 text-muted">
+        {formatBytes(upload.size_bytes)}
+      </td>
+      <td className="border-b border-line px-4 py-3">
+        {upload.preview_id ? (
+          <div>
+            <p className="font-mono text-xs text-ink">{upload.preview_id}</p>
+            <p className="mt-1 text-xs text-muted">
+              {(upload.preview_row_count ?? 0).toLocaleString()} rows parsed
+            </p>
+          </div>
+        ) : (
+          <span className="text-xs text-muted">-</span>
+        )}
+      </td>
+      <td className="border-b border-line px-4 py-3 text-xs text-muted">
+        <p>{formatDate(upload.created_at)}</p>
+        <p className="mt-1">Updated {formatDate(upload.updated_at)}</p>
+      </td>
+      <td className="border-b border-line px-4 py-3">
+        <Link
+          className="inline-flex h-8 items-center rounded-md border border-brand/20 bg-blue-50 px-3 text-xs font-semibold text-brand transition hover:bg-blue-100"
+          to={`/tasks?project_id=${encodeURIComponent(upload.project_id)}`}
+        >
+          Task trace
+        </Link>
+      </td>
+    </tr>
+  );
+}
+
 function Panel({
   title,
   children,
@@ -427,6 +654,59 @@ function Panel({
         <h3 className="text-sm font-semibold text-ink">{title}</h3>
       </div>
       <div className="p-4">{children}</div>
+    </div>
+  );
+}
+
+function UploadStatusChip({ status }: { status: UploadStatus }) {
+  const meta = {
+    failed: {
+      label: "Failed",
+      icon: XCircle,
+      className: "border-red-200 bg-red-50 text-red-700",
+    },
+    parsed: {
+      label: "Parsed",
+      icon: CheckCircle2,
+      className: "border-emerald/20 bg-emerald/10 text-emerald",
+    },
+    pending: {
+      label: "Pending",
+      icon: Clock3,
+      className: "border-amber/20 bg-amber/10 text-amber",
+    },
+  }[status];
+  const Icon = meta.icon;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${meta.className}`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {meta.label}
+    </span>
+  );
+}
+
+function HistoryMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "brand" | "amber" | "emerald";
+}) {
+  const toneClass = {
+    amber: "border-amber/20 bg-amber/10 text-amber",
+    brand: "border-brand/20 bg-blue-50 text-brand",
+    emerald: "border-emerald/20 bg-emerald/10 text-emerald",
+  }[tone];
+
+  return (
+    <div className={`rounded-md border px-3 py-2 ${toneClass}`}>
+      <p className="text-[11px] font-semibold uppercase">{label}</p>
+      <p className="mt-1 text-sm font-semibold">{value}</p>
     </div>
   );
 }
@@ -511,9 +791,22 @@ function DatasetCreateFailureHint({ message }: { message: string }) {
   );
 }
 
-function StateMessage({ title }: { title: string }) {
+function StateMessage({
+  title,
+  tone = "muted",
+}: {
+  title: string;
+  tone?: "muted" | "error";
+}) {
   return (
-    <div className="rounded-md border border-line bg-slate-50 px-4 py-6 text-center text-sm text-muted">
+    <div
+      className={[
+        "rounded-md border px-4 py-6 text-center text-sm",
+        tone === "error"
+          ? "border-red-200 bg-red-50 text-red-700"
+          : "border-line bg-slate-50 text-muted",
+      ].join(" ")}
+    >
       {title}
     </div>
   );
@@ -536,4 +829,45 @@ function formatCell(value: string | number | boolean | null | undefined) {
     return value ? "true" : "false";
   }
   return String(value);
+}
+
+interface UploadSummary {
+  failed: number;
+  parsed: number;
+  total: number;
+}
+
+function summarizeUploads(uploads: UploadRecord[]): UploadSummary {
+  return uploads.reduce(
+    (summary, upload) => {
+      summary.total += 1;
+      if (upload.status === "parsed") {
+        summary.parsed += 1;
+      }
+      if (upload.status === "failed") {
+        summary.failed += 1;
+      }
+      return summary;
+    },
+    { failed: 0, parsed: 0, total: 0 },
+  );
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    month: "short",
+  }).format(new Date(value));
 }

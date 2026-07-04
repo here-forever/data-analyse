@@ -216,3 +216,76 @@ def test_unsupported_file_type_is_rejected(client: TestClient) -> None:
     failed_task = task_response.json()["items"][0]
     assert failed_task["related_resource_id"].startswith("file_")
     assert failed_task["can_retry"] is False
+
+
+def test_import_upload_history_lists_success_and_failed_records(client: TestClient) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+    other_project_id = create_project(client, headers)
+
+    upload_response = client.post(
+        "/api/imports/file-previews",
+        headers=headers,
+        data={"project_id": project_id},
+        files={
+            "file": (
+                "sales.csv",
+                b"order_id,amount\n1,19.5\n2,42.0\n",
+                "text/csv",
+            )
+        },
+    )
+    assert upload_response.status_code == 201
+    preview = upload_response.json()
+
+    failed_upload_response = client.post(
+        "/api/imports/file-previews",
+        headers=headers,
+        data={"project_id": project_id},
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+    )
+    assert failed_upload_response.status_code == 400
+
+    other_upload_response = client.post(
+        "/api/imports/file-previews",
+        headers=headers,
+        data={"project_id": other_project_id},
+        files={
+            "file": (
+                "other.csv",
+                b"region,total\nNorth,10\n",
+                "text/csv",
+            )
+        },
+    )
+    assert other_upload_response.status_code == 201
+
+    history_response = client.get(
+        "/api/imports/uploads",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+
+    assert history_response.status_code == 200
+    uploads = history_response.json()["items"]
+    upload_by_name = {upload["file_name"]: upload for upload in uploads}
+    assert set(upload_by_name) == {"sales.csv", "notes.txt"}
+
+    success_upload = upload_by_name["sales.csv"]
+    assert success_upload["id"] == preview["uploaded_file_id"]
+    assert success_upload["project_id"] == project_id
+    assert success_upload["file_type"] == "csv"
+    assert success_upload["status"] == "parsed"
+    assert success_upload["error_message"] is None
+    assert success_upload["preview_id"] == preview["id"]
+    assert success_upload["preview_row_count"] == 2
+    assert success_upload["created_at"]
+    assert success_upload["updated_at"]
+
+    failed_upload = upload_by_name["notes.txt"]
+    assert failed_upload["project_id"] == project_id
+    assert failed_upload["file_type"] == "txt"
+    assert failed_upload["status"] == "failed"
+    assert failed_upload["error_message"] == "Only CSV and Excel files are supported"
+    assert failed_upload["preview_id"] is None
+    assert failed_upload["preview_row_count"] is None

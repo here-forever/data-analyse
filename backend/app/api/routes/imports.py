@@ -10,8 +10,8 @@ from app.auth.service import User
 from app.core.config import get_settings
 from app.core.database import get_db_session
 from app.imports.repository import ImportRepository
-from app.imports.schemas import FilePreviewResponse
-from app.imports.service import ImportService, to_file_preview_response
+from app.imports.schemas import FilePreviewResponse, UploadedFileListResponse
+from app.imports.service import ImportService, to_file_preview_response, to_uploaded_file_response
 from app.imports.storage import LocalFileStorage
 from app.tasks.repository import TaskRepository
 from app.tasks.service import TaskService
@@ -30,6 +30,19 @@ def get_import_service(
         storage=LocalFileStorage(settings.upload_storage_root),
         audit=AuditService(AuditRepository(session), actor_id=current_user.id),
         tasks=TaskService(TaskRepository(session), initiator_id=current_user.id),
+    )
+
+
+@router.get("/uploads", response_model=UploadedFileListResponse)
+def list_uploaded_files(
+    project_id: str,
+    imports: Annotated[ImportService, Depends(get_import_service)],
+) -> UploadedFileListResponse:
+    return UploadedFileListResponse(
+        items=[
+            to_uploaded_file_response(uploaded_file)
+            for uploaded_file in imports.list_uploaded_files(project_id)
+        ]
     )
 
 

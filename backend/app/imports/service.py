@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from app.audit.service import AuditService
@@ -7,7 +8,7 @@ from app.core.errors import AppError
 from app.core.ids import new_id
 from app.imports.parser import ParsedTabularFile, parse_tabular_file
 from app.imports.repository import ImportRepository
-from app.imports.schemas import FilePreviewResponse, ImportFieldPreview
+from app.imports.schemas import FilePreviewResponse, ImportFieldPreview, UploadedFileResponse
 from app.imports.storage import LocalFileStorage
 from app.models.imports import FileImportPreview as FileImportPreviewModel
 from app.models.imports import UploadedFile as UploadedFileModel
@@ -28,6 +29,22 @@ class FilePreview:
     uploaded_file_id: str | None = None
     storage_path: str | None = None
     upload_status: str = "parsed"
+
+
+@dataclass(frozen=True)
+class UploadedFileRecord:
+    id: str
+    project_id: str
+    uploader_id: str
+    file_name: str
+    file_type: str
+    size_bytes: int
+    status: str
+    error_message: str | None
+    preview_id: str | None
+    preview_row_count: int | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class ImportService:
@@ -255,6 +272,15 @@ class ImportService:
 
         return self._previews.get(preview_id)
 
+    def list_uploaded_files(self, project_id: str) -> list[UploadedFileRecord]:
+        if self.repository is None:
+            return []
+
+        return [
+            model_to_uploaded_file_record(uploaded_file, preview)
+            for uploaded_file, preview in self.repository.list_uploaded_files(project_id)
+        ]
+
     def parse_preview_source(self, preview_id: str) -> ParsedTabularFile:
         preview = self.get_preview(preview_id)
         if preview is None:
@@ -443,6 +469,43 @@ def to_file_preview_response(preview: FilePreview) -> FilePreviewResponse:
         row_count=preview.row_count,
         fields=preview.fields,
         sample_rows=preview.sample_rows,
+    )
+
+
+def model_to_uploaded_file_record(
+    uploaded_file: UploadedFileModel,
+    preview: FileImportPreviewModel | None,
+) -> UploadedFileRecord:
+    return UploadedFileRecord(
+        id=uploaded_file.id,
+        project_id=uploaded_file.project_id,
+        uploader_id=uploaded_file.uploader_id,
+        file_name=uploaded_file.file_name,
+        file_type=uploaded_file.file_type,
+        size_bytes=uploaded_file.size_bytes,
+        status=uploaded_file.status,
+        error_message=uploaded_file.error_message,
+        preview_id=preview.id if preview is not None else None,
+        preview_row_count=preview.row_count if preview is not None else None,
+        created_at=uploaded_file.created_at,
+        updated_at=uploaded_file.updated_at,
+    )
+
+
+def to_uploaded_file_response(uploaded_file: UploadedFileRecord) -> UploadedFileResponse:
+    return UploadedFileResponse(
+        id=uploaded_file.id,
+        project_id=uploaded_file.project_id,
+        uploader_id=uploaded_file.uploader_id,
+        file_name=uploaded_file.file_name,
+        file_type=uploaded_file.file_type,
+        size_bytes=uploaded_file.size_bytes,
+        status=uploaded_file.status,
+        error_message=uploaded_file.error_message,
+        preview_id=uploaded_file.preview_id,
+        preview_row_count=uploaded_file.preview_row_count,
+        created_at=uploaded_file.created_at,
+        updated_at=uploaded_file.updated_at,
     )
 
 
