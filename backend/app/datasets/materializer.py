@@ -36,8 +36,8 @@ class DatasetMaterializer:
         connection = self.session.connection()
         if inspect(connection).has_table(table_name):
             raise AppError(
-                message="Dataset physical table already exists",
-                code="dataset_table_exists",
+                message="Physical table already exists",
+                code="physical_table_exists",
                 status_code=409,
             )
 
@@ -78,8 +78,8 @@ class DatasetMaterializer:
         connection = self.session.connection()
         if not inspect(connection).has_table(table_name):
             raise AppError(
-                message="Dataset physical table does not exist",
-                code="dataset_table_not_found",
+                message="Physical table does not exist",
+                code="physical_table_not_found",
                 status_code=404,
             )
 
@@ -101,8 +101,8 @@ class DatasetMaterializer:
         connection = self.session.connection()
         if not inspect(connection).has_table(table_name):
             raise AppError(
-                message="Dataset physical table does not exist",
-                code="dataset_table_not_found",
+                message="Physical table does not exist",
+                code="physical_table_not_found",
                 status_code=404,
             )
 

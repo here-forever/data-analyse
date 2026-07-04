@@ -1,4 +1,5 @@
 import { apiClient } from "../../lib/apiClient";
+import type { DataView } from "../dataViews/api";
 import type { DatasetField } from "../datasets/api";
 
 export interface SqlDatasetReference {
@@ -29,10 +30,22 @@ export interface SqlRunResult {
   limit: number;
 }
 
+export interface SqlSaveDataViewPayload {
+  project_id: string;
+  sql: string;
+  name: string;
+  description?: string | null;
+  limit: number;
+}
+
 export async function getSqlMetadata(projectId: string): Promise<SqlMetadata> {
   return apiClient.get<SqlMetadata>("/sql/metadata", { project_id: projectId });
 }
 
 export async function runSql(payload: SqlRunPayload): Promise<SqlRunResult> {
   return apiClient.post<SqlRunResult>("/sql/run", payload);
+}
+
+export async function saveSqlDataView(payload: SqlSaveDataViewPayload): Promise<DataView> {
+  return apiClient.post<DataView>("/sql/save-data-view", payload);
 }

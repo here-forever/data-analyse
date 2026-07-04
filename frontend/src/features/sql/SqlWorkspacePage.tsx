@@ -3,6 +3,7 @@ import {
   Database,
   Play,
   RefreshCcw,
+  Save,
   SquareTerminal,
   Table2,
 } from "lucide-react";
@@ -12,6 +13,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   getSqlMetadata,
   runSql,
+  saveSqlDataView,
   type SqlDatasetReference,
   type SqlRunResult,
 } from "./api";
@@ -26,6 +28,7 @@ export function SqlWorkspacePage() {
   const [submittedProjectId, setSubmittedProjectId] =
     useState(initialProjectId);
   const [sql, setSql] = useState("SELECT * FROM dataset_id_here");
+  const [dataViewName, setDataViewName] = useState("SQL data view");
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [latestResult, setLatestResult] = useState<SqlRunResult | null>(null);
 
@@ -49,6 +52,17 @@ export function SqlWorkspacePage() {
         limit,
       }),
     onSuccess: (result) => setLatestResult(result),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      saveSqlDataView({
+        project_id: submittedProjectId,
+        sql,
+        name: dataViewName.trim(),
+        description: null,
+        limit,
+      }),
   });
 
   function submitProject(event: React.FormEvent<HTMLFormElement>) {
@@ -108,16 +122,26 @@ export function SqlWorkspacePage() {
         <div className="space-y-5">
           <QueryEditor
             sql={sql}
+            dataViewName={dataViewName}
             limit={limit}
             firstDatasetAlias={firstDataset?.table_alias}
             isRunning={runMutation.isPending}
             error={runMutation.error}
+            saveError={saveMutation.error}
+            savedDataView={saveMutation.data}
             onSqlChange={(value) => {
               setSql(value);
               setLatestResult(null);
+              saveMutation.reset();
+            }}
+            onDataViewNameChange={(value) => {
+              setDataViewName(value);
+              saveMutation.reset();
             }}
             onLimitChange={setLimit}
             onRun={() => runMutation.mutate()}
+            onSave={() => saveMutation.mutate()}
+            isSaving={saveMutation.isPending}
           />
           <ResultPanel
             result={latestResult}
@@ -196,22 +220,34 @@ function DatasetCatalog({
 
 function QueryEditor({
   sql,
+  dataViewName,
   limit,
   firstDatasetAlias,
   isRunning,
   error,
+  saveError,
+  savedDataView,
   onSqlChange,
+  onDataViewNameChange,
   onLimitChange,
   onRun,
+  onSave,
+  isSaving,
 }: {
   sql: string;
+  dataViewName: string;
   limit: number;
   firstDatasetAlias?: string;
   isRunning: boolean;
   error: Error | null;
+  saveError: Error | null;
+  savedDataView?: { id: string; name: string; row_count: number };
   onSqlChange: (value: string) => void;
+  onDataViewNameChange: (value: string) => void;
   onLimitChange: (value: number) => void;
   onRun: () => void;
+  onSave: () => void;
+  isSaving: boolean;
 }) {
   return (
     <div className="rounded-md border border-line bg-panel shadow-panel">
@@ -248,18 +284,52 @@ function QueryEditor({
               onChange={(event) => onLimitChange(Number(event.target.value))}
             />
           </label>
-          <button
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
-            disabled={isRunning || sql.trim().length === 0}
-            onClick={onRun}
-            type="button"
-          >
-            <Play className="h-4 w-4" />
-            {isRunning ? "Running..." : "Run query"}
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={isRunning || sql.trim().length === 0}
+              onClick={onRun}
+              type="button"
+            >
+              <Play className="h-4 w-4" />
+              {isRunning ? "Running..." : "Run query"}
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-emerald/20 bg-emerald/10 p-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <label className="flex-1">
+              <span className="text-xs font-semibold uppercase text-emerald">
+                Data view name
+              </span>
+              <input
+                aria-label="Data view name"
+                className="mt-2 h-10 w-full rounded-md border border-emerald/20 bg-white px-3 text-sm text-ink outline-none transition focus:border-emerald focus:ring-2 focus:ring-emerald/20"
+                value={dataViewName}
+                onChange={(event) => onDataViewNameChange(event.target.value)}
+              />
+            </label>
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-45 md:mt-6"
+              disabled={isSaving || sql.trim().length === 0 || dataViewName.trim().length === 0}
+              onClick={onSave}
+              type="button"
+            >
+              <Save className="h-4 w-4" />
+              {isSaving ? "Saving..." : "Save as data view"}
+            </button>
+          </div>
         </div>
 
         {error ? <Alert message={error.message} /> : null}
+        {saveError ? <Alert message={saveError.message} /> : null}
+        {savedDataView ? (
+          <div className="rounded-md border border-emerald/20 bg-emerald/10 px-3 py-3 text-sm text-emerald">
+            Saved {savedDataView.name} ({savedDataView.row_count} rows). It is now available for
+            charts and dashboards.
+          </div>
+        ) : null}
       </div>
     </div>
   );

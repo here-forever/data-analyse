@@ -1,0 +1,277 @@
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+
+import { renderWithProviders } from "../../test/test-utils";
+import { DataViewSourcePage } from "./DataViewSourcePage";
+
+const fetchMock = vi.fn();
+
+describe("DataViewSourcePage", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    global.fetch = fetchMock;
+  });
+
+  test("loads data views and previews rows for chart sources", async () => {
+    fetchMock.mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+
+        if (url.includes("/data-views?")) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  id: "view_1",
+                  project_id: "prj_demo",
+                  name: "Orders View",
+                  description: null,
+                  source_type: "sql_query",
+                  source_id: null,
+                  source_sql: "SELECT customer, amount FROM dataset_1",
+                  physical_table_name: "dv_orders",
+                  row_count: 1,
+                  fields: [
+                    {
+                      name: "customer",
+                      inferred_type: "text",
+                      nullable: false,
+                      order: 0,
+                    },
+                    {
+                      name: "amount",
+                      inferred_type: "decimal",
+                      nullable: false,
+                      order: 1,
+                    },
+                  ],
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url.includes("/data-views/view_1/preview")) {
+          return Promise.resolve(
+            jsonResponse({
+              data_view: {
+                id: "view_1",
+                project_id: "prj_demo",
+                name: "Orders View",
+                description: null,
+                source_type: "sql_query",
+                source_id: null,
+                source_sql: "SELECT customer, amount FROM dataset_1",
+                physical_table_name: "dv_orders",
+                row_count: 1,
+                fields: [
+                  {
+                    name: "customer",
+                    inferred_type: "text",
+                    nullable: false,
+                    order: 0,
+                  },
+                  {
+                    name: "amount",
+                    inferred_type: "decimal",
+                    nullable: false,
+                    order: 1,
+                  },
+                ],
+              },
+              page: 1,
+              page_size: 20,
+              total_rows: 1,
+              rows: [{ _das_row_id: 1, customer: "Ada", amount: 19.5 }],
+            }),
+          );
+        }
+
+        if (url.includes("/charts?")) {
+          return Promise.resolve(jsonResponse({ items: [] }));
+        }
+
+        if (url.endsWith("/charts")) {
+          expect(init?.body).toContain('"data_view_id":"view_1"');
+          expect(init?.body).toContain('"chart_type":"bar"');
+          return Promise.resolve(
+            jsonResponse({
+              id: "chart_1",
+              project_id: "prj_demo",
+              data_view_id: "view_1",
+              name: "Orders View Chart",
+              chart_type: "bar",
+              config: { dimension: "customer", metric: "amount" },
+            }),
+          );
+        }
+
+        return Promise.resolve(jsonResponse({}));
+      },
+    );
+    const user = userEvent.setup();
+
+    renderWithProviders(<DataViewSourcePage mode="charts" />);
+
+    expect((await screen.findAllByText("Orders View")).length).toBeGreaterThan(
+      0,
+    );
+    expect(await screen.findByText("Ada")).toBeInTheDocument();
+    expect(screen.getByText("19.5")).toBeInTheDocument();
+    expect(screen.getByText(/configure chart type/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save chart" }));
+    expect(
+      await screen.findByText("Saved Orders View Chart"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/api/charts",
+        expect.any(Object),
+      );
+    });
+  });
+
+  test("creates a dashboard or report draft from chart resources", async () => {
+    fetchMock.mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+
+        if (url.includes("/data-views?")) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  id: "view_1",
+                  project_id: "prj_demo",
+                  name: "Orders View",
+                  description: null,
+                  source_type: "sql_query",
+                  source_id: null,
+                  source_sql: "SELECT customer, amount FROM dataset_1",
+                  physical_table_name: "dv_orders",
+                  row_count: 1,
+                  fields: [
+                    {
+                      name: "customer",
+                      inferred_type: "text",
+                      nullable: false,
+                      order: 0,
+                    },
+                    {
+                      name: "amount",
+                      inferred_type: "decimal",
+                      nullable: false,
+                      order: 1,
+                    },
+                  ],
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url.includes("/data-views/view_1/preview")) {
+          return Promise.resolve(
+            jsonResponse({
+              data_view: {
+                id: "view_1",
+                project_id: "prj_demo",
+                name: "Orders View",
+                description: null,
+                source_type: "sql_query",
+                source_id: null,
+                source_sql: "SELECT customer, amount FROM dataset_1",
+                physical_table_name: "dv_orders",
+                row_count: 1,
+                fields: [
+                  {
+                    name: "customer",
+                    inferred_type: "text",
+                    nullable: false,
+                    order: 0,
+                  },
+                  {
+                    name: "amount",
+                    inferred_type: "decimal",
+                    nullable: false,
+                    order: 1,
+                  },
+                ],
+              },
+              page: 1,
+              page_size: 20,
+              total_rows: 1,
+              rows: [{ _das_row_id: 1, customer: "Ada", amount: 19.5 }],
+            }),
+          );
+        }
+
+        if (url.includes("/charts?")) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  id: "chart_1",
+                  project_id: "prj_demo",
+                  data_view_id: "view_1",
+                  name: "Orders Chart",
+                  chart_type: "bar",
+                  config: { dimension: "customer", metric: "amount" },
+                },
+              ],
+            }),
+          );
+        }
+
+        if (url.includes("/dashboards?")) {
+          return Promise.resolve(jsonResponse({ items: [] }));
+        }
+
+        if (url.endsWith("/dashboards")) {
+          expect(init?.body).toContain('"chart_id":"chart_1"');
+          expect(init?.body).toContain('"mode":"report"');
+          return Promise.resolve(
+            jsonResponse({
+              id: "dash_1",
+              project_id: "prj_demo",
+              name: "Orders Chart Report",
+              layout: {
+                mode: "report",
+                items: [{ chart_id: "chart_1", x: 0, y: 0, w: 12, h: 6 }],
+              },
+            }),
+          );
+        }
+
+        return Promise.resolve(jsonResponse({}));
+      },
+    );
+    const user = userEvent.setup();
+
+    renderWithProviders(<DataViewSourcePage mode="dashboards" />);
+
+    expect((await screen.findAllByText("Orders View")).length).toBeGreaterThan(
+      0,
+    );
+    expect(await screen.findByText("Orders Chart")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Layout mode"), "report");
+    await user.click(screen.getByRole("button", { name: "Save layout" }));
+    expect(
+      await screen.findByText("Saved Orders Chart Report"),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:8000/api/dashboards",
+        expect.any(Object),
+      );
+    });
+  });
+});
+
+function jsonResponse(payload: unknown): Response {
+  return {
+    ok: true,
+    json: async () => payload,
+  } as Response;
+}

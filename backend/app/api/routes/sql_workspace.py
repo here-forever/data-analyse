@@ -8,11 +8,15 @@ from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user
 from app.auth.service import User
 from app.core.database import get_db_session
+from app.data_views.repository import DataViewRepository
+from app.data_views.schemas import DataViewResponse
+from app.data_views.service import DataViewService, to_data_view_response
 from app.datasets.repository import DatasetRepository
 from app.datasets.service import DatasetService
 from app.sql_workspace.schemas import (
     SqlRunRequest,
     SqlRunResponse,
+    SqlSaveDataViewRequest,
     SqlWorkspaceMetadataResponse,
 )
 from app.sql_workspace.service import SqlWorkspaceService
@@ -26,7 +30,13 @@ def get_sql_workspace_service(
 ) -> SqlWorkspaceService:
     audit = AuditService(AuditRepository(session), actor_id=current_user.id)
     datasets = DatasetService(DatasetRepository(session), audit=audit)
-    return SqlWorkspaceService(session=session, datasets=datasets, audit=audit)
+    data_views = DataViewService(DataViewRepository(session), audit=audit)
+    return SqlWorkspaceService(
+        session=session,
+        datasets=datasets,
+        data_views=data_views,
+        audit=audit,
+    )
 
 
 @router.get("/metadata", response_model=SqlWorkspaceMetadataResponse)
@@ -43,3 +53,11 @@ def run_sql(
     sql_workspace: Annotated[SqlWorkspaceService, Depends(get_sql_workspace_service)],
 ) -> SqlRunResponse:
     return sql_workspace.run(payload)
+
+
+@router.post("/save-data-view", response_model=DataViewResponse)
+def save_sql_as_data_view(
+    payload: SqlSaveDataViewRequest,
+    sql_workspace: Annotated[SqlWorkspaceService, Depends(get_sql_workspace_service)],
+) -> DataViewResponse:
+    return to_data_view_response(sql_workspace.save_as_data_view(payload))

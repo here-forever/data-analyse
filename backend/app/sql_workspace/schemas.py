@@ -29,3 +29,11 @@ class SqlRunResponse(BaseModel):
     rows: list[dict[str, object | None]]
     row_count: int
     limit: int
+
+
+class SqlSaveDataViewRequest(BaseModel):
+    project_id: str
+    sql: str = Field(min_length=1, max_length=20_000)
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = None
+    limit: int = Field(default=500, ge=1, le=5000)

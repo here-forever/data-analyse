@@ -1,0 +1,688 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  BarChart3,
+  Boxes,
+  LayoutDashboard,
+  RefreshCcw,
+  Save,
+  Table2,
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+
+import {
+  createChart,
+  createDashboard,
+  getDataViewPreview,
+  listCharts,
+  listDashboards,
+  listDataViews,
+  type ChartDefinition,
+  type DataView,
+  type DataViewPreviewResponse,
+  type DashboardDefinition,
+} from "./api";
+
+const DEFAULT_PROJECT_ID = "prj_demo";
+const PAGE_SIZE = 20;
+
+interface DataViewSourcePageProps {
+  mode: "charts" | "dashboards";
+}
+
+export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
+  const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const isCharts = mode === "charts";
+  const initialProjectId = searchParams.get("project_id") ?? DEFAULT_PROJECT_ID;
+  const [projectId, setProjectId] = useState(initialProjectId);
+  const [submittedProjectId, setSubmittedProjectId] =
+    useState(initialProjectId);
+  const [selectedDataViewId, setSelectedDataViewId] = useState<string | null>(
+    null,
+  );
+  const [layoutMode, setLayoutMode] = useState<"dashboard" | "report">(
+    "dashboard",
+  );
+
+  const dataViewsQuery = useQuery({
+    queryKey: ["data-views", submittedProjectId],
+    queryFn: () => listDataViews(submittedProjectId),
+    enabled: submittedProjectId.trim().length > 0,
+  });
+
+  const dataViews = useMemo(
+    () => dataViewsQuery.data?.items ?? [],
+    [dataViewsQuery.data],
+  );
+  const selectedDataView = useMemo(
+    () =>
+      dataViews.find((dataView) => dataView.id === selectedDataViewId) ??
+      dataViews[0] ??
+      null,
+    [dataViews, selectedDataViewId],
+  );
+
+  const previewQuery = useQuery({
+    queryKey: ["data-view-preview", selectedDataView?.id, PAGE_SIZE],
+    queryFn: () => getDataViewPreview(selectedDataView?.id ?? "", 1, PAGE_SIZE),
+    enabled: Boolean(selectedDataView?.id),
+  });
+
+  const chartsQuery = useQuery({
+    queryKey: ["charts", submittedProjectId],
+    queryFn: () => listCharts(submittedProjectId),
+    enabled: submittedProjectId.trim().length > 0,
+  });
+
+  const dashboardsQuery = useQuery({
+    queryKey: ["dashboards", submittedProjectId],
+    queryFn: () => listDashboards(submittedProjectId),
+    enabled: submittedProjectId.trim().length > 0 && mode === "dashboards",
+  });
+
+  const charts = chartsQuery.data?.items ?? [];
+  const dashboards = dashboardsQuery.data?.items ?? [];
+  const selectedDataViewCharts = selectedDataView
+    ? charts.filter((chart) => chart.data_view_id === selectedDataView.id)
+    : [];
+  const defaultChartName = selectedDataView
+    ? `${selectedDataView.name} ${isCharts ? "Chart" : "Visual"}`
+    : "Data view chart";
+
+  const createChartMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedDataView) {
+        throw new Error("Select a data view before creating a chart.");
+      }
+
+      const dimension = pickDimensionField(selectedDataView);
+      const metric = pickMetricField(selectedDataView);
+
+      return createChart({
+        project_id: submittedProjectId,
+        data_view_id: selectedDataView.id,
+        name: defaultChartName,
+        chart_type: metric ? "bar" : "table",
+        config: {
+          dimension,
+          metric,
+          data_view_name: selectedDataView.name,
+          preview_rows: previewQuery.data?.rows.slice(0, 12) ?? [],
+        },
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["charts", submittedProjectId],
+      });
+    },
+  });
+
+  const createDashboardMutation = useMutation({
+    mutationFn: () => {
+      const sourceChart = selectedDataViewCharts[0] ?? charts[0];
+      if (!sourceChart) {
+        throw new Error(
+          "Create a chart before creating a dashboard or report.",
+        );
+      }
+
+      return createDashboard({
+        project_id: submittedProjectId,
+        name:
+          layoutMode === "dashboard"
+            ? `${sourceChart.name} Dashboard`
+            : `${sourceChart.name} Report`,
+        layout: {
+          mode: layoutMode,
+          items: [
+            {
+              chart_id: sourceChart.id,
+              x: 0,
+              y: 0,
+              w: layoutMode === "dashboard" ? 6 : 12,
+              h: layoutMode === "dashboard" ? 4 : 6,
+            },
+          ],
+        },
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["dashboards", submittedProjectId],
+      });
+    },
+  });
+
+  function submitProject(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmittedProjectId(projectId.trim());
+    setSelectedDataViewId(null);
+    createChartMutation.reset();
+    createDashboardMutation.reset();
+  }
+
+  const Icon = isCharts ? BarChart3 : LayoutDashboard;
+
+  return (
+    <section className="space-y-5">
+      <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p className="text-sm font-medium text-cyan">
+            {isCharts ? "Charts" : "Dashboards"}
+          </p>
+          <h2 className="mt-1 text-2xl font-semibold text-ink">
+            {isCharts ? "Chart source workspace" : "Dashboard source workspace"}
+          </h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
+            Select reusable data views as stable inputs for visual analysis and
+            report layouts.
+          </p>
+        </div>
+
+        <form className="flex w-full max-w-xl gap-2" onSubmit={submitProject}>
+          <label className="sr-only" htmlFor={`${mode}-project-id`}>
+            Project ID
+          </label>
+          <input
+            id={`${mode}-project-id`}
+            className="h-10 flex-1 rounded-md border border-line bg-panel px-3 text-sm text-ink shadow-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-blue-100"
+            value={projectId}
+            onChange={(event) => setProjectId(event.target.value)}
+            placeholder="Project ID"
+          />
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+            type="submit"
+          >
+            <RefreshCcw className="h-4 w-4" />
+            Load
+          </button>
+        </form>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="rounded-md border border-line bg-panel shadow-panel">
+          <PanelHeader
+            icon={<Icon className="h-4 w-4 text-brand" />}
+            title="Data views"
+          />
+          <div className="p-3">
+            {dataViewsQuery.isLoading ? (
+              <StateMessage title="Loading data views" />
+            ) : dataViewsQuery.error ? (
+              <StateMessage title="Could not load data views" tone="error" />
+            ) : dataViews.length === 0 ? (
+              <StateMessage title="No data views found" />
+            ) : (
+              <div className="space-y-2">
+                {dataViews.map((dataView) => (
+                  <DataViewButton
+                    key={dataView.id}
+                    dataView={dataView}
+                    isActive={dataView.id === selectedDataView?.id}
+                    onSelect={() => setSelectedDataViewId(dataView.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <div className="space-y-5">
+          <DataViewSummary dataView={selectedDataView} />
+          {isCharts ? (
+            <ChartResourcePanel
+              charts={selectedDataViewCharts}
+              allCharts={charts}
+              isLoading={chartsQuery.isLoading}
+              error={chartsQuery.error}
+              selectedDataView={selectedDataView}
+              createdChart={createChartMutation.data}
+              createError={createChartMutation.error}
+              isCreating={createChartMutation.isPending}
+              onCreate={() => createChartMutation.mutate()}
+            />
+          ) : (
+            <DashboardResourcePanel
+              charts={
+                selectedDataViewCharts.length > 0
+                  ? selectedDataViewCharts
+                  : charts
+              }
+              dashboards={dashboards}
+              layoutMode={layoutMode}
+              isLoading={dashboardsQuery.isLoading || chartsQuery.isLoading}
+              error={dashboardsQuery.error ?? chartsQuery.error}
+              createdDashboard={createDashboardMutation.data}
+              createError={createDashboardMutation.error}
+              isCreating={createDashboardMutation.isPending}
+              onLayoutModeChange={setLayoutMode}
+              onCreate={() => createDashboardMutation.mutate()}
+            />
+          )}
+          <PreviewPanel
+            mode={mode}
+            preview={previewQuery.data}
+            isLoading={previewQuery.isLoading || previewQuery.isFetching}
+            error={previewQuery.error}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ChartResourcePanel({
+  charts,
+  allCharts,
+  isLoading,
+  error,
+  selectedDataView,
+  createdChart,
+  createError,
+  isCreating,
+  onCreate,
+}: {
+  charts: ChartDefinition[];
+  allCharts: ChartDefinition[];
+  isLoading: boolean;
+  error: Error | null;
+  selectedDataView: DataView | null;
+  createdChart?: ChartDefinition;
+  createError: Error | null;
+  isCreating: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-line bg-panel shadow-panel">
+      <PanelHeader
+        icon={<BarChart3 className="h-4 w-4 text-brand" />}
+        title="Chart definitions"
+      />
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <ResourceList
+          emptyTitle={isLoading ? "Loading charts" : "No charts yet"}
+          error={error}
+          items={charts.length > 0 ? charts : allCharts}
+          renderItem={(chart) => (
+            <ResourceTile
+              key={chart.id}
+              title={chart.name}
+              meta={`${chart.chart_type} - ${chart.data_view_id}`}
+            />
+          )}
+        />
+        <div className="rounded-md border border-brand/20 bg-blue-50 p-3">
+          <p className="text-xs font-semibold uppercase text-brand">
+            Create from source
+          </p>
+          <p className="mt-2 truncate text-sm font-semibold text-ink">
+            {selectedDataView?.name ?? "No data view selected"}
+          </p>
+          <button
+            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!selectedDataView || isCreating}
+            onClick={onCreate}
+            type="button"
+          >
+            <Save className="h-4 w-4" />
+            {isCreating ? "Saving..." : "Save chart"}
+          </button>
+          {createdChart ? (
+            <SuccessMessage message={`Saved ${createdChart.name}`} />
+          ) : null}
+          {createError ? <Alert message={createError.message} /> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardResourcePanel({
+  charts,
+  dashboards,
+  layoutMode,
+  isLoading,
+  error,
+  createdDashboard,
+  createError,
+  isCreating,
+  onLayoutModeChange,
+  onCreate,
+}: {
+  charts: ChartDefinition[];
+  dashboards: DashboardDefinition[];
+  layoutMode: "dashboard" | "report";
+  isLoading: boolean;
+  error: Error | null;
+  createdDashboard?: DashboardDefinition;
+  createError: Error | null;
+  isCreating: boolean;
+  onLayoutModeChange: (mode: "dashboard" | "report") => void;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-line bg-panel shadow-panel">
+      <PanelHeader
+        icon={<Boxes className="h-4 w-4 text-brand" />}
+        title="Dashboard and report drafts"
+      />
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+        <ResourceList
+          emptyTitle={isLoading ? "Loading layouts" : "No layouts yet"}
+          error={error}
+          items={dashboards}
+          renderItem={(dashboard) => (
+            <ResourceTile
+              key={dashboard.id}
+              title={dashboard.name}
+              meta={`${String(dashboard.layout.mode ?? "dashboard")} - ${dashboard.id}`}
+            />
+          )}
+        />
+        <div className="rounded-md border border-amber/20 bg-amber/10 p-3">
+          <label>
+            <span className="text-xs font-semibold uppercase text-amber">
+              Layout mode
+            </span>
+            <select
+              className="mt-2 h-10 w-full rounded-md border border-amber/20 bg-white px-3 text-sm text-ink outline-none transition focus:border-amber focus:ring-2 focus:ring-amber/20"
+              value={layoutMode}
+              onChange={(event) =>
+                onLayoutModeChange(event.target.value as "dashboard" | "report")
+              }
+            >
+              <option value="dashboard">Dashboard</option>
+              <option value="report">Free report</option>
+            </select>
+          </label>
+          <p className="mt-3 truncate text-sm font-semibold text-ink">
+            {charts[0]?.name ?? "No chart available"}
+          </p>
+          <button
+            className="mt-4 inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-amber px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={charts.length === 0 || isCreating}
+            onClick={onCreate}
+            type="button"
+          >
+            <Save className="h-4 w-4" />
+            {isCreating ? "Saving..." : "Save layout"}
+          </button>
+          {createdDashboard ? (
+            <SuccessMessage message={`Saved ${createdDashboard.name}`} />
+          ) : null}
+          {createError ? <Alert message={createError.message} /> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResourceList<T>({
+  items,
+  emptyTitle,
+  error,
+  renderItem,
+}: {
+  items: T[];
+  emptyTitle: string;
+  error: Error | null;
+  renderItem: (item: T) => React.ReactNode;
+}) {
+  if (error) {
+    return <StateMessage title="Could not load resources" tone="error" />;
+  }
+  if (items.length === 0) {
+    return <StateMessage title={emptyTitle} />;
+  }
+  return (
+    <div className="grid gap-2 md:grid-cols-2">{items.map(renderItem)}</div>
+  );
+}
+
+function ResourceTile({ title, meta }: { title: string; meta: string }) {
+  return (
+    <div className="rounded-md border border-line bg-white px-3 py-3">
+      <p className="truncate text-sm font-semibold text-ink">{title}</p>
+      <p className="mt-1 truncate text-xs text-muted">{meta}</p>
+    </div>
+  );
+}
+
+function DataViewButton({
+  dataView,
+  isActive,
+  onSelect,
+}: {
+  dataView: DataView;
+  isActive: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      className={[
+        "w-full rounded-md border px-3 py-3 text-left transition",
+        isActive
+          ? "border-brand bg-blue-50 shadow-sm"
+          : "border-line bg-white hover:border-cyan hover:bg-slate-50",
+      ].join(" ")}
+      onClick={onSelect}
+      type="button"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-ink">
+            {dataView.name}
+          </p>
+          <p className="mt-1 truncate text-xs text-muted">{dataView.id}</p>
+        </div>
+        <span className="rounded bg-emerald/10 px-2 py-1 text-xs font-semibold text-emerald">
+          {dataView.row_count.toLocaleString()}
+        </span>
+      </div>
+      <p className="mt-3 truncate font-mono text-xs text-brand">
+        {dataView.physical_table_name}
+      </p>
+    </button>
+  );
+}
+
+function DataViewSummary({ dataView }: { dataView: DataView | null }) {
+  if (!dataView) {
+    return (
+      <div className="rounded-md border border-dashed border-line bg-panel p-6 text-sm text-muted">
+        Select a data view to inspect fields and preview rows.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 md:grid-cols-4">
+      <Metric
+        label="Rows"
+        value={dataView.row_count.toLocaleString()}
+        tone="brand"
+      />
+      <Metric
+        label="Fields"
+        value={dataView.fields.length.toLocaleString()}
+        tone="cyan"
+      />
+      <Metric label="Source" value={dataView.source_type} tone="emerald" />
+      <Metric label="Table" value={dataView.physical_table_name} tone="amber" />
+    </div>
+  );
+}
+
+function PreviewPanel({
+  mode,
+  preview,
+  isLoading,
+  error,
+}: {
+  mode: "charts" | "dashboards";
+  preview?: DataViewPreviewResponse;
+  isLoading: boolean;
+  error: Error | null;
+}) {
+  const fields = preview?.data_view.fields ?? [];
+  const rows = preview?.rows ?? [];
+
+  return (
+    <div className="rounded-md border border-line bg-panel shadow-panel">
+      <PanelHeader
+        icon={<Table2 className="h-4 w-4 text-brand" />}
+        title="Data source preview"
+      />
+      {isLoading ? (
+        <StateMessage title="Loading preview rows" />
+      ) : error ? (
+        <StateMessage title="Could not load preview rows" tone="error" />
+      ) : !preview ? (
+        <StateMessage title="No data view selected" />
+      ) : (
+        <>
+          <div className="border-b border-line px-4 py-3 text-sm text-muted">
+            {mode === "charts"
+              ? "Next step: configure chart type, dimension, and metric from this stable data view."
+              : "Next step: arrange charts, tables, and filters from this stable data view."}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase text-muted">
+                <tr>
+                  {fields.map((field) => (
+                    <th
+                      key={field.name}
+                      className="border-b border-line px-4 py-3 font-semibold"
+                    >
+                      {field.name}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, rowIndex) => (
+                  <tr key={rowIndex} className="hover:bg-slate-50">
+                    {fields.map((field) => (
+                      <td
+                        key={field.name}
+                        className="border-b border-line px-4 py-3 text-ink"
+                      >
+                        {formatCell(row[field.name])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PanelHeader({
+  icon,
+  title,
+}: {
+  icon: React.ReactNode;
+  title: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+      {icon}
+      <h3 className="text-sm font-semibold text-ink">{title}</h3>
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "brand" | "cyan" | "emerald" | "amber";
+}) {
+  const toneClass = {
+    amber: "border-amber/20 bg-amber/10 text-amber",
+    brand: "border-brand/20 bg-blue-50 text-brand",
+    cyan: "border-cyan/20 bg-cyan/10 text-cyan",
+    emerald: "border-emerald/20 bg-emerald/10 text-emerald",
+  }[tone];
+
+  return (
+    <div className={`rounded-md border px-3 py-3 ${toneClass}`}>
+      <p className="text-xs font-semibold uppercase">{label}</p>
+      <p className="mt-2 truncate text-sm font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function StateMessage({
+  title,
+  tone = "muted",
+}: {
+  title: string;
+  tone?: "muted" | "error";
+}) {
+  return (
+    <div
+      className={[
+        "m-4 rounded-md border px-4 py-6 text-center text-sm",
+        tone === "error"
+          ? "border-red-200 bg-red-50 text-red-700"
+          : "border-line bg-slate-50 text-muted",
+      ].join(" ")}
+    >
+      {title}
+    </div>
+  );
+}
+
+function SuccessMessage({ message }: { message: string }) {
+  return (
+    <div className="mt-3 rounded-md border border-emerald/20 bg-emerald/10 px-3 py-2 text-sm text-emerald">
+      {message}
+    </div>
+  );
+}
+
+function Alert({ message }: { message: string }) {
+  return (
+    <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+      {message}
+    </div>
+  );
+}
+
+function formatCell(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return <span className="text-muted">NULL</span>;
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return String(value);
+}
+
+function pickDimensionField(dataView: DataView): string | null {
+  return (
+    dataView.fields.find((field) => field.inferred_type === "text")?.name ??
+    dataView.fields[0]?.name ??
+    null
+  );
+}
+
+function pickMetricField(dataView: DataView): string | null {
+  return (
+    dataView.fields.find((field) =>
+      ["decimal", "integer"].includes(field.inferred_type),
+    )?.name ?? null
+  );
+}

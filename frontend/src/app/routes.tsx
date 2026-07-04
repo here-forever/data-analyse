@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { CleaningWorkbenchPage } from "../features/cleaning/CleaningWorkbenchPage";
+import { DataViewSourcePage } from "../features/dataViews/DataViewSourcePage";
 import { DatasetPage } from "../features/datasets/DatasetPage";
 import { ImportWizardPage } from "../features/imports/ImportWizardPage";
 import { SqlWorkspacePage } from "../features/sql/SqlWorkspacePage";
@@ -23,18 +24,8 @@ export const routePlaceholders: Record<string, ReactNode> = {
   "/datasets": <DatasetPage />,
   "/cleaning": <CleaningWorkbenchPage />,
   "/sql": <SqlWorkspacePage />,
-  "/charts": (
-    <PlaceholderPage
-      title="Charts"
-      description="Configure charts from stable data views with dimensions and metrics."
-    />
-  ),
-  "/dashboards": (
-    <PlaceholderPage
-      title="Dashboards"
-      description="Arrange chart widgets into configurable dashboards and reports."
-    />
-  ),
+  "/charts": <DataViewSourcePage mode="charts" />,
+  "/dashboards": <DataViewSourcePage mode="dashboards" />,
   "/tasks": (
     <PlaceholderPage
       title="Task center"

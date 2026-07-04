@@ -131,3 +131,55 @@ def test_sql_workspace_rejects_unknown_dataset_alias(client: TestClient) -> None
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "sql_unknown_dataset"
+
+
+def test_sql_workspace_saves_query_result_as_data_view(client: TestClient) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+    dataset = create_dataset(client, headers, project_id)
+
+    save_response = client.post(
+        "/api/sql/save-data-view",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "name": "West Orders View",
+            "description": "Reusable SQL result",
+            "sql": f"SELECT * FROM {dataset['id']} WHERE region = 'West'",
+            "limit": 100,
+        },
+    )
+
+    assert save_response.status_code == 200
+    data_view = save_response.json()
+    assert data_view["name"] == "West Orders View"
+    assert data_view["source_type"] == "sql_query"
+    assert data_view["row_count"] == 1
+    assert [field["name"] for field in data_view["fields"]] == ["customer", "amount", "region"]
+    assert data_view["fields"][1]["inferred_type"] == "decimal"
+
+    preview_response = client.get(
+        f"/api/data-views/{data_view['id']}/preview",
+        headers=headers,
+        params={"page": 1, "page_size": 20},
+    )
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["rows"][0] == {
+        "_das_row_id": 1,
+        "customer": "Ada",
+        "amount": 19.5,
+        "region": "West",
+    }
+
+    session = next(client.app.dependency_overrides[get_db_session]())
+    try:
+        saved_log = session.scalar(
+            select(OperationLogModel).where(OperationLogModel.action == "sql.data_view_saved")
+        )
+    finally:
+        session.close()
+
+    assert saved_log is not None
+    assert saved_log.resource_id == data_view["id"]
+    assert saved_log.detail["row_count"] == 1
