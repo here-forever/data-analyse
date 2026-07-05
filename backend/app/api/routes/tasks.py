@@ -10,6 +10,8 @@ from app.auth.service import User
 from app.cleaning.repository import CleaningRepository
 from app.cleaning.service import CleaningService
 from app.core.database import get_db_session
+from app.data_sources.repository import DataSourceRepository
+from app.data_sources.service import DataSourceService
 from app.data_views.repository import DataViewRepository
 from app.data_views.service import DataViewService
 from app.datasets.repository import DatasetRepository
@@ -47,6 +49,7 @@ def get_task_retry_executor(
         audit=audit,
         tasks=None,
     )
+    data_sources = DataSourceService(DataSourceRepository(session), audit=audit)
     data_views = DataViewService(DataViewRepository(session), audit=audit)
     cleaning = CleaningService(
         CleaningRepository(session),
@@ -71,6 +74,7 @@ def get_task_retry_executor(
         tasks=tasks,
         imports=imports,
         datasets=datasets,
+        data_sources=data_sources,
         cleaning=cleaning,
         sql_workspace=sql_workspace,
         visualizations=visualizations,

@@ -146,6 +146,10 @@ describe("DataSourcesPage", () => {
           return Promise.resolve(jsonResponse({ items: [] }));
         }
 
+        if (url.includes("/data-sources/external-imports")) {
+          return Promise.resolve(jsonResponse({ items: [] }));
+        }
+
         if (
           url.endsWith("/data-sources/external-databases") &&
           init?.method === "POST"
@@ -170,12 +174,22 @@ describe("DataSourcesPage", () => {
         }
 
         if (
+          url.endsWith("/data-sources/external-databases/src_1/preview-table") &&
+          init?.method === "POST"
+        ) {
+          expect(init.body).toContain('"schema_name":"public"');
+          expect(init.body).toContain('"table_name":"orders"');
+          return Promise.resolve(jsonResponse(tablePreviewPayload));
+        }
+
+        if (
           url.endsWith("/data-sources/external-databases/src_1/import-table") &&
           init?.method === "POST"
         ) {
           expect(init.body).toContain('"schema_name":"public"');
           expect(init.body).toContain('"table_name":"orders"');
           expect(init.body).toContain('"dataset_name":"Orders"');
+          expect(init.body).toContain('"name":"buyer_name"');
           return Promise.resolve(
             jsonResponse({
               dataset: importedTableDataset,
@@ -183,6 +197,16 @@ describe("DataSourcesPage", () => {
               source_type: "external_table",
             }),
           );
+        }
+
+        if (
+          url.endsWith("/data-sources/external-databases/src_1/preview-sql") &&
+          init?.method === "POST"
+        ) {
+          expect(init.body).toContain(
+            '"sql":"SELECT region, amount FROM orders"',
+          );
+          return Promise.resolve(jsonResponse(sqlPreviewPayload));
         }
 
         if (
@@ -269,7 +293,11 @@ describe("DataSourcesPage", () => {
     expect(await screen.findByText("public.orders")).toBeInTheDocument();
     await user.click(screen.getByText("public.orders").closest("button")!);
     expect(screen.getByDisplayValue("Orders")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Import table" }));
+    await user.click(screen.getByRole("button", { name: "Preview table" }));
+    expect(await screen.findByText("Preview result")).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Field name 1"));
+    await user.type(screen.getByLabelText("Field name 1"), "buyer_name");
+    await user.click(screen.getByRole("button", { name: "Confirm import" }));
 
     expect(
       await screen.findByText("Created Orders (2 rows)"),
@@ -286,7 +314,11 @@ describe("DataSourcesPage", () => {
     const sqlInput = screen.getByLabelText("SQL");
     await user.clear(sqlInput);
     await user.type(sqlInput, "SELECT region, amount FROM orders");
-    await user.click(screen.getByRole("button", { name: "Import SQL result" }));
+    await user.click(
+      screen.getByRole("button", { name: "Preview SQL result" }),
+    );
+    expect(await screen.findByDisplayValue("region")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Confirm SQL import" }));
 
     expect(
       await screen.findByText("Created SQL Orders (1 rows)"),
@@ -345,6 +377,58 @@ const schemaPayload = {
       ],
     },
   ],
+};
+
+const tablePreviewPayload = {
+  source_type: "external_table",
+  fields: [
+    {
+      name: "customer",
+      inferred_type: "text",
+      nullable: false,
+      order: 0,
+    },
+    {
+      name: "amount",
+      inferred_type: "decimal",
+      nullable: false,
+      order: 1,
+    },
+  ],
+  sample_rows: [
+    {
+      customer: "Ada",
+      amount: 19.5,
+    },
+  ],
+  row_count: 1,
+  limit: 100,
+};
+
+const sqlPreviewPayload = {
+  source_type: "external_sql",
+  fields: [
+    {
+      name: "region",
+      inferred_type: "text",
+      nullable: false,
+      order: 0,
+    },
+    {
+      name: "amount",
+      inferred_type: "decimal",
+      nullable: false,
+      order: 1,
+    },
+  ],
+  sample_rows: [
+    {
+      region: "West",
+      amount: 61.5,
+    },
+  ],
+  row_count: 1,
+  limit: 100,
 };
 
 const importedTableDataset = {

@@ -16,8 +16,13 @@ from app.data_sources.schemas import (
     ExternalDatabaseConnectionTestResponse,
     ExternalDatabaseSchemaResponse,
     ExternalDatasetImportResponse,
+    ExternalImportDetailResponse,
+    ExternalImportHistoryResponse,
+    ExternalImportPreviewResponse,
     ExternalSqlImportRequest,
+    ExternalSqlPreviewRequest,
     ExternalTableImportRequest,
+    ExternalTablePreviewRequest,
 )
 from app.data_sources.service import (
     DataSourceService,
@@ -49,6 +54,13 @@ def get_dataset_service(
     audit = AuditService(AuditRepository(session), actor_id=current_user.id)
     tasks = TaskService(TaskRepository(session), initiator_id=current_user.id)
     return DatasetService(DatasetRepository(session), audit=audit, tasks=tasks)
+
+
+def get_task_service(
+    session: Annotated[Session, Depends(get_db_session)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> TaskService:
+    return TaskService(TaskRepository(session), initiator_id=current_user.id)
 
 
 @router.post(
@@ -108,6 +120,54 @@ def inspect_external_database_schema(
         connection=to_external_database_connection_response(connection),
         tables=[external_table_to_response(table) for table in tables],
     )
+
+
+@router.get(
+    "/external-imports",
+    response_model=ExternalImportHistoryResponse,
+)
+def list_external_import_history(
+    project_id: str,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+    tasks: Annotated[TaskService, Depends(get_task_service)],
+) -> ExternalImportHistoryResponse:
+    return data_sources.list_external_import_history(project_id=project_id, tasks=tasks)
+
+
+@router.get(
+    "/external-imports/{task_id}",
+    response_model=ExternalImportDetailResponse,
+)
+def get_external_import_detail(
+    task_id: str,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+    tasks: Annotated[TaskService, Depends(get_task_service)],
+) -> ExternalImportDetailResponse:
+    return data_sources.get_external_import_detail(task_id=task_id, tasks=tasks)
+
+
+@router.post(
+    "/external-databases/{connection_id}/preview-table",
+    response_model=ExternalImportPreviewResponse,
+)
+def preview_external_database_table(
+    connection_id: str,
+    payload: ExternalTablePreviewRequest,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+) -> ExternalImportPreviewResponse:
+    return data_sources.preview_external_table(connection_id, payload)
+
+
+@router.post(
+    "/external-databases/{connection_id}/preview-sql",
+    response_model=ExternalImportPreviewResponse,
+)
+def preview_external_database_sql(
+    connection_id: str,
+    payload: ExternalSqlPreviewRequest,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+) -> ExternalImportPreviewResponse:
+    return data_sources.preview_external_sql(connection_id, payload)
 
 
 @router.post(

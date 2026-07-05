@@ -353,6 +353,7 @@ class DatasetService:
                 source_id=source_id,
                 transform_type=transform_type,
                 task_type=task_type,
+                retry_payload=retry_payload,
             )
         except Exception as error:
             self._record_dataset_failure(
@@ -366,6 +367,27 @@ class DatasetService:
             )
             raise
 
+    def record_materialization_failure(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        task_type: str,
+        error: Exception,
+        related_resource_type: str | None,
+        related_resource_id: str | None,
+        retry_payload: dict[str, object] | None,
+    ) -> None:
+        self._record_dataset_failure(
+            project_id=project_id,
+            name=name,
+            task_type=task_type,
+            error=error,
+            related_resource_type=related_resource_type,
+            related_resource_id=related_resource_id,
+            retry_payload=retry_payload,
+        )
+
     def _create_materialized_dataset_from_rows(
         self,
         *,
@@ -377,6 +399,7 @@ class DatasetService:
         source_id: str,
         transform_type: str,
         task_type: str,
+        retry_payload: dict[str, object] | None = None,
     ) -> Dataset:
         self._validate_fields(fields)
         self._validate_dataset_name_available(project_id=project_id, name=name)
@@ -432,7 +455,11 @@ class DatasetService:
                 target_dataset=dataset,
                 transform_type=transform_type,
             )
-            self._record_dataset_task(dataset, task_type=task_type)
+            self._record_dataset_task(
+                dataset,
+                task_type=task_type,
+                retry_payload=retry_payload,
+            )
             return dataset
 
         self._datasets[dataset.id] = dataset
@@ -631,7 +658,13 @@ class DatasetService:
             transform_id=target_dataset.id,
         )
 
-    def _record_dataset_task(self, dataset: Dataset, *, task_type: str) -> None:
+    def _record_dataset_task(
+        self,
+        dataset: Dataset,
+        *,
+        task_type: str,
+        retry_payload: dict[str, object] | None = None,
+    ) -> None:
         if self.tasks is None:
             return
 
@@ -641,6 +674,7 @@ class DatasetService:
             task_type=task_type,
             related_resource_type="dataset",
             related_resource_id=dataset.id,
+            retry_payload=retry_payload,
         )
 
     def _record_dataset_failure(

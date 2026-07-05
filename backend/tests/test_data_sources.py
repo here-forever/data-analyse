@@ -23,6 +23,7 @@ from app.data_sources.schemas import (
     ExternalDatabaseConnectionCreateRequest,
     ExternalSqlImportRequest,
     ExternalTableImportRequest,
+    ExternalTablePreviewRequest,
 )
 from app.data_sources.service import DataSourceService, decode_secret
 from app.datasets.repository import DatasetRepository
@@ -34,6 +35,7 @@ from app.models.task import Task as TaskModel
 from app.projects.repository import ProjectRepository
 from app.projects.service import ProjectService
 from app.tasks.repository import TaskRepository
+from app.tasks.retry_executor import TaskRetryExecutor
 from app.tasks.service import TaskService
 
 
@@ -131,6 +133,31 @@ class FakeTester:
                 ),
             ],
             rows=[{"region": "West", "total_amount": 61.5}],
+        )
+
+
+class FlakyTableTester(FakeTester):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_next_table_read = True
+
+    def read_table(
+        self,
+        config: ExternalDatabaseConnectionConfig,
+        *,
+        schema_name: str,
+        table_name: str,
+        limit: int,
+    ) -> ExternalQueryResult:
+        if self.fail_next_table_read:
+            self.fail_next_table_read = False
+            self.table_reads.append((config, schema_name, table_name, limit))
+            raise RuntimeError("temporary external database timeout")
+        return super().read_table(
+            config,
+            schema_name=schema_name,
+            table_name=table_name,
+            limit=limit,
         )
 
 
@@ -276,6 +303,25 @@ def test_external_database_api_discovers_schema_and_imports_datasets(
         f"/api/data-sources/external-databases/{connection_id}/schema",
         headers=headers,
     )
+    table_preview_response = client.post(
+        f"/api/data-sources/external-databases/{connection_id}/preview-table",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "schema_name": "public",
+            "table_name": "orders",
+            "limit": 25,
+        },
+    )
+    sql_preview_response = client.post(
+        f"/api/data-sources/external-databases/{connection_id}/preview-sql",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "sql": "SELECT region, SUM(amount) AS total_amount FROM orders GROUP BY region",
+            "limit": 25,
+        },
+    )
     table_import_response = client.post(
         f"/api/data-sources/external-databases/{connection_id}/import-table",
         headers=headers,
@@ -314,6 +360,16 @@ def test_external_database_api_discovers_schema_and_imports_datasets(
     assert schema_payload["tables"][0]["schema_name"] == "public"
     assert schema_payload["tables"][0]["columns"][0]["name"] == "customer"
 
+    assert table_preview_response.status_code == 200
+    table_preview = table_preview_response.json()
+    assert table_preview["source_type"] == "external_table"
+    assert table_preview["fields"][0]["name"] == "customer"
+    assert table_preview["sample_rows"][0]["customer"] == "Ada"
+    assert sql_preview_response.status_code == 200
+    sql_preview = sql_preview_response.json()
+    assert sql_preview["source_type"] == "external_sql"
+    assert sql_preview["fields"][0]["name"] == "region"
+
     assert table_import_response.status_code == 201
     table_dataset = table_import_response.json()["dataset"]
     assert table_dataset["name"] == "External Orders"
@@ -333,6 +389,26 @@ def test_external_database_api_discovers_schema_and_imports_datasets(
     assert preview_response.json()["rows"][0]["customer"] == "Ada"
     assert unsafe_sql_response.status_code == 400
     assert unsafe_sql_response.json()["error"]["code"] == "sql_not_read_only"
+
+    history_response = client.get(
+        "/api/data-sources/external-imports",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+    assert history_response.status_code == 200
+    history = history_response.json()["items"]
+    assert {item["source_type"] for item in history} == {"external_table", "external_sql"}
+    assert all(item["connection_id"] == connection_id for item in history)
+    table_history = next(item for item in history if item["source_type"] == "external_table")
+    assert table_history["table_name"] == "orders"
+    assert table_history["field_count"] == 2
+
+    detail_response = client.get(
+        f"/api/data-sources/external-imports/{table_history['task']['id']}",
+        headers=headers,
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["fields"][0]["name"] == "customer"
 
 
 def test_external_database_connections_are_project_scoped_and_read_only(
@@ -569,6 +645,84 @@ def test_data_source_service_discovers_schema_and_imports_external_table() -> No
     )
 
 
+def test_data_source_service_previews_and_imports_with_edited_fields() -> None:
+    session = create_test_session()
+    project_id, actor_id = create_project_in_session(session)
+    tester = FakeTester()
+    audit = AuditService(AuditRepository(session), actor_id=actor_id)
+    tasks = TaskService(TaskRepository(session), initiator_id=actor_id)
+    service = DataSourceService(
+        DataSourceRepository(session),
+        tester=tester,
+        audit=audit,
+    )
+    datasets = DatasetService(
+        DatasetRepository(session),
+        audit=audit,
+        tasks=tasks,
+    )
+    connection = service.create_connection(
+        ExternalDatabaseConnectionCreateRequest(
+            project_id=project_id,
+            name="Warehouse",
+            database_type="postgresql",
+            host="warehouse.local",
+            database_name="analytics",
+            username="readonly_user",
+            password="secret-password",
+        )
+    )
+
+    preview = service.preview_external_table(
+        connection.id,
+        ExternalTablePreviewRequest(
+            project_id=project_id,
+            schema_name="public",
+            table_name="orders",
+            limit=20,
+        ),
+    )
+    edited_fields = [
+        ImportFieldPreview(
+            name="buyer_name",
+            inferred_type="text",
+            nullable=False,
+            order=0,
+        ),
+        ImportFieldPreview(
+            name="order_amount",
+            inferred_type="decimal",
+            nullable=False,
+            order=1,
+        ),
+    ]
+    result = service.import_external_table(
+        connection.id,
+        ExternalTableImportRequest(
+            project_id=project_id,
+            dataset_name="Edited External Orders",
+            schema_name="public",
+            table_name="orders",
+            limit=20,
+            fields=edited_fields,
+        ),
+        datasets,
+    )
+
+    assert preview.fields[0].name == "customer"
+    dataset, rows = datasets.list_dataset_rows(result.dataset.id)
+    assert [field.name for field in dataset.fields] == ["buyer_name", "order_amount"]
+    assert rows[0]["buyer_name"] == "Ada"
+    assert rows[0]["order_amount"] == 19.5
+
+    task = next(
+        task for task in tasks.list_tasks(project_id) if task.task_type == "external_table_import"
+    )
+    assert task.status == "success"
+    assert task.retry_payload is not None
+    assert task.retry_payload["fields"][0]["name"] == "buyer_name"
+
+
 def test_data_source_service_imports_external_read_only_sql() -> None:
     session = create_test_session()
     project_id, actor_id = create_project_in_session(session)
@@ -624,6 +778,81 @@ def test_data_source_service_imports_external_read_only_sql() -> None:
         and edge.transform_type == "external_sql_import"
         for edge in lineage_edges
     )
+
+
+def test_external_table_import_retry_replays_real_external_read() -> None:
+    session = create_test_session()
+    project_id, actor_id = create_project_in_session(session)
+    tester = FlakyTableTester()
+    audit = AuditService(AuditRepository(session), actor_id=actor_id)
+    tasks = TaskService(TaskRepository(session), initiator_id=actor_id)
+    service = DataSourceService(
+        DataSourceRepository(session),
+        tester=tester,
+        audit=audit,
+    )
+    datasets = DatasetService(
+        DatasetRepository(session),
+        audit=audit,
+        tasks=tasks,
+    )
+    connection = service.create_connection(
+        ExternalDatabaseConnectionCreateRequest(
+            project_id=project_id,
+            name="Warehouse",
+            database_type="postgresql",
+            host="warehouse.local",
+            database_name="analytics",
+            username="readonly_user",
+            password="secret-password",
+        )
+    )
+
+    try:
+        service.import_external_table(
+            connection.id,
+            ExternalTableImportRequest(
+                project_id=project_id,
+                dataset_name="Retry External Orders",
+                schema_name="public",
+                table_name="orders",
+                limit=100,
+            ),
+            datasets,
+        )
+    except RuntimeError as exc:
+        assert "timeout" in str(exc)
+    else:
+        raise AssertionError("Expected first external table import to fail")
+
+    failed_task = next(
+        task for task in tasks.list_tasks(project_id) if task.task_type == "external_table_import"
+    )
+    assert failed_task.status == "retryable"
+    assert failed_task.retry_payload is not None
+    assert failed_task.retry_payload["connection_id"] == connection.id
+
+    retry_executor = TaskRetryExecutor(
+        tasks=tasks,
+        imports=None,
+        datasets=DatasetService(DatasetRepository(session), audit=audit, tasks=None),
+        data_sources=service,
+        cleaning=None,
+        sql_workspace=None,
+        visualizations=None,
+    )
+    retry_result = retry_executor.retry(failed_task.id)
+
+    assert retry_result.original_task.status == "retryable"
+    assert retry_result.retry_task.status == "success"
+    assert retry_result.retry_task.related_resource_type == "dataset"
+    assert len(tester.table_reads) == 2
+
+    dataset_id = retry_result.retry_task.related_resource_id
+    assert dataset_id is not None
+    dataset, rows = datasets.list_dataset_rows(dataset_id)
+    assert dataset.name == "Retry External Orders"
+    assert rows[0]["customer"] == "Ada"
 
 
 def test_external_database_connector_builds_urls_and_timeouts() -> None:

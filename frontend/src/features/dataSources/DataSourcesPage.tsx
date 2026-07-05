@@ -23,10 +23,14 @@ import {
 } from "../imports/api";
 import {
   createExternalDatabaseConnection,
+  getExternalImportDetail,
   importExternalSql,
   importExternalTable,
   inspectExternalDatabaseSchema,
+  listExternalImportHistory,
   listExternalDatabaseConnections,
+  previewExternalSql,
+  previewExternalTable,
   testExternalDatabaseConnection,
   type DatabaseType,
   type ExternalConnectionStatus,
@@ -34,7 +38,12 @@ import {
   type ExternalDatabaseConnection,
   type ExternalDatabaseConnectionCreatePayload,
   type ExternalDatasetImportResponse,
+  type ExternalImportDetailResponse,
+  type ExternalImportHistoryItem,
+  type ExternalImportPreviewResponse,
   type ExternalTable,
+  type FieldType,
+  type ImportFieldPreview,
 } from "./api";
 
 const DEFAULT_PROJECT_ID = "prj_demo";
@@ -56,11 +65,13 @@ interface ExternalConnectionFormState {
 interface TableImportFormState {
   datasetName: string;
   limit: string;
+  previewLimit: string;
 }
 
 interface SqlImportFormState {
   datasetName: string;
   limit: string;
+  previewLimit: string;
   sql: string;
 }
 
@@ -77,13 +88,24 @@ const DEFAULT_EXTERNAL_CONNECTION_FORM: ExternalConnectionFormState = {
 const DEFAULT_TABLE_IMPORT_FORM: TableImportFormState = {
   datasetName: "",
   limit: "1000",
+  previewLimit: "100",
 };
 
 const DEFAULT_SQL_IMPORT_FORM: SqlImportFormState = {
   datasetName: "",
   limit: "1000",
+  previewLimit: "100",
   sql: "SELECT * FROM orders",
 };
+
+const FIELD_TYPES: FieldType[] = [
+  "text",
+  "integer",
+  "decimal",
+  "boolean",
+  "date",
+  "datetime",
+];
 
 export function DataSourcesPage() {
   const [projectId, setProjectId] = useState(DEFAULT_PROJECT_ID);
@@ -362,6 +384,15 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
   const [sqlImportForm, setSqlImportForm] = useState<SqlImportFormState>(
     DEFAULT_SQL_IMPORT_FORM,
   );
+  const [tablePreview, setTablePreview] =
+    useState<ExternalImportPreviewResponse | null>(null);
+  const [sqlPreview, setSqlPreview] =
+    useState<ExternalImportPreviewResponse | null>(null);
+  const [tableFields, setTableFields] = useState<ImportFieldPreview[]>([]);
+  const [sqlFields, setSqlFields] = useState<ImportFieldPreview[]>([]);
+  const [activeImportTaskId, setActiveImportTaskId] = useState<string | null>(
+    null,
+  );
 
   const connectionsQuery = useQuery({
     queryKey: ["external-database-connections", projectId],
@@ -399,6 +430,53 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
     enabled: activeConnectionId !== null,
   });
 
+  const importHistoryQuery = useQuery({
+    queryKey: ["external-import-history", projectId],
+    queryFn: () => listExternalImportHistory(projectId),
+    enabled: projectId.trim().length > 0,
+  });
+
+  const importDetailQuery = useQuery({
+    queryKey: ["external-import-detail", activeImportTaskId],
+    queryFn: () => getExternalImportDetail(activeImportTaskId ?? ""),
+    enabled: activeImportTaskId !== null,
+  });
+
+  const previewTableMutation = useMutation({
+    mutationFn: ({
+      connectionId,
+      table,
+    }: {
+      connectionId: string;
+      table: ExternalTable;
+    }) =>
+      previewExternalTable(connectionId, {
+        limit: Number(tableImportForm.previewLimit),
+        project_id: projectId,
+        schema_name: table.schema_name,
+        table_name: table.table_name,
+      }),
+    onSuccess: (preview) => {
+      setTablePreview(preview);
+      setTableFields(preview.fields);
+      importTableMutation.reset();
+    },
+  });
+
+  const previewSqlMutation = useMutation({
+    mutationFn: (connectionId: string) =>
+      previewExternalSql(connectionId, {
+        limit: Number(sqlImportForm.previewLimit),
+        project_id: projectId,
+        sql: sqlImportForm.sql,
+      }),
+    onSuccess: (preview) => {
+      setSqlPreview(preview);
+      setSqlFields(preview.fields);
+      importSqlMutation.reset();
+    },
+  });
+
   const importTableMutation = useMutation({
     mutationFn: ({
       connectionId,
@@ -413,14 +491,21 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
         project_id: projectId,
         schema_name: table.schema_name,
         table_name: table.table_name,
+        fields: tableFields,
       }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ["datasets", projectId] });
       setTableImportForm({
         datasetName: "",
         limit: tableImportForm.limit,
+        previewLimit: tableImportForm.previewLimit,
       });
       return result;
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["external-import-history", projectId],
+      });
     },
   });
 
@@ -431,9 +516,15 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
         limit: Number(sqlImportForm.limit),
         project_id: projectId,
         sql: sqlImportForm.sql,
+        fields: sqlFields,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["datasets", projectId] });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["external-import-history", projectId],
+      });
     },
   });
 
@@ -483,19 +574,51 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
     setActiveConnectionId(connectionId);
     setSelectedTableKey(null);
     setTableImportForm(DEFAULT_TABLE_IMPORT_FORM);
+    setTablePreview(null);
+    setSqlPreview(null);
+    setTableFields([]);
+    setSqlFields([]);
     importTableMutation.reset();
     importSqlMutation.reset();
+    previewTableMutation.reset();
+    previewSqlMutation.reset();
   }
 
   function selectTable(table: ExternalTable) {
     setSelectedTableKey(externalTableKey(table));
+    setTablePreview(null);
+    setTableFields([]);
     setTableImportForm((current) => ({
       ...current,
       datasetName:
         current.datasetName ||
         cleanDatasetNameFromExternalTable(table.table_name),
     }));
+    previewTableMutation.reset();
     importTableMutation.reset();
+  }
+
+  function updateTableImportForm(next: TableImportFormState) {
+    if (next.previewLimit !== tableImportForm.previewLimit) {
+      setTablePreview(null);
+      setTableFields([]);
+      previewTableMutation.reset();
+      importTableMutation.reset();
+    }
+    setTableImportForm(next);
+  }
+
+  function updateSqlImportForm(next: SqlImportFormState) {
+    if (
+      next.sql !== sqlImportForm.sql ||
+      next.previewLimit !== sqlImportForm.previewLimit
+    ) {
+      setSqlPreview(null);
+      setSqlFields([]);
+      previewSqlMutation.reset();
+      importSqlMutation.reset();
+    }
+    setSqlImportForm(next);
   }
 
   function submitConnection(event: React.FormEvent<HTMLFormElement>) {
@@ -650,6 +773,16 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
       </div>
       <ExternalImportWorkspace
         activeConnection={activeConnection ?? null}
+        importHistory={importHistoryQuery.data?.items ?? []}
+        importHistoryError={importHistoryQuery.error}
+        importDetail={importDetailQuery.data}
+        importDetailError={importDetailQuery.error}
+        isLoadingImportDetail={
+          importDetailQuery.isLoading || importDetailQuery.isFetching
+        }
+        isLoadingImportHistory={
+          importHistoryQuery.isLoading || importHistoryQuery.isFetching
+        }
         importSqlError={importSqlMutation.error}
         importSqlResult={importSqlMutation.data}
         importTableError={importTableMutation.error}
@@ -657,18 +790,33 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
         isImportingSql={importSqlMutation.isPending}
         isImportingTable={importTableMutation.isPending}
         isLoadingSchema={schemaQuery.isLoading || schemaQuery.isFetching}
+        isPreviewingSql={previewSqlMutation.isPending}
+        isPreviewingTable={previewTableMutation.isPending}
+        previewSqlError={previewSqlMutation.error}
+        previewTableError={previewTableMutation.error}
         schema={schemaQuery.data}
         schemaError={schemaQuery.error}
         selectedTable={selectedTable}
+        sqlFields={sqlFields}
         sqlImportForm={sqlImportForm}
+        sqlPreview={sqlPreview}
+        tableFields={tableFields}
         tableImportForm={tableImportForm}
+        tablePreview={tablePreview}
         onImportSql={(connectionId) => importSqlMutation.mutate(connectionId)}
         onImportTable={(connectionId, table) =>
           importTableMutation.mutate({ connectionId, table })
         }
+        onInspectImport={setActiveImportTaskId}
+        onPreviewSql={(connectionId) => previewSqlMutation.mutate(connectionId)}
+        onPreviewTable={(connectionId, table) =>
+          previewTableMutation.mutate({ connectionId, table })
+        }
         onSelectTable={selectTable}
-        onUpdateSqlImportForm={setSqlImportForm}
-        onUpdateTableImportForm={setTableImportForm}
+        onUpdateSqlFields={setSqlFields}
+        onUpdateSqlImportForm={updateSqlImportForm}
+        onUpdateTableFields={setTableFields}
+        onUpdateTableImportForm={updateTableImportForm}
       />
     </div>
   );
@@ -842,61 +990,121 @@ function ExternalConnectionRow({
 
 function ExternalImportWorkspace({
   activeConnection,
+  importHistory,
+  importHistoryError,
+  importDetail,
+  importDetailError,
+  isLoadingImportDetail,
+  isLoadingImportHistory,
   schema,
   isLoadingSchema,
   schemaError,
   selectedTable,
   tableImportForm,
   sqlImportForm,
+  tablePreview,
+  sqlPreview,
+  tableFields,
+  sqlFields,
   importTableResult,
   importSqlResult,
+  previewTableError,
+  previewSqlError,
   importTableError,
   importSqlError,
+  isPreviewingTable,
+  isPreviewingSql,
   isImportingTable,
   isImportingSql,
   onSelectTable,
+  onPreviewTable,
+  onPreviewSql,
   onImportTable,
   onImportSql,
+  onUpdateTableFields,
+  onUpdateSqlFields,
   onUpdateTableImportForm,
   onUpdateSqlImportForm,
+  onInspectImport,
 }: {
   activeConnection: ExternalDatabaseConnection | null;
+  importHistory: ExternalImportHistoryItem[];
+  importHistoryError: Error | null;
+  importDetail?: ExternalImportDetailResponse;
+  importDetailError: Error | null;
+  isLoadingImportDetail: boolean;
+  isLoadingImportHistory: boolean;
   schema?: ExternalDatabaseSchemaResponse;
   isLoadingSchema: boolean;
   schemaError: Error | null;
   selectedTable: ExternalTable | null;
   tableImportForm: TableImportFormState;
   sqlImportForm: SqlImportFormState;
+  tablePreview: ExternalImportPreviewResponse | null;
+  sqlPreview: ExternalImportPreviewResponse | null;
+  tableFields: ImportFieldPreview[];
+  sqlFields: ImportFieldPreview[];
   importTableResult?: ExternalDatasetImportResponse;
   importSqlResult?: ExternalDatasetImportResponse;
+  previewTableError: Error | null;
+  previewSqlError: Error | null;
   importTableError: Error | null;
   importSqlError: Error | null;
+  isPreviewingTable: boolean;
+  isPreviewingSql: boolean;
   isImportingTable: boolean;
   isImportingSql: boolean;
   onSelectTable: (table: ExternalTable) => void;
+  onPreviewTable: (connectionId: string, table: ExternalTable) => void;
+  onPreviewSql: (connectionId: string) => void;
   onImportTable: (connectionId: string, table: ExternalTable) => void;
   onImportSql: (connectionId: string) => void;
+  onUpdateTableFields: (fields: ImportFieldPreview[]) => void;
+  onUpdateSqlFields: (fields: ImportFieldPreview[]) => void;
   onUpdateTableImportForm: (form: TableImportFormState) => void;
   onUpdateSqlImportForm: (form: SqlImportFormState) => void;
+  onInspectImport: (taskId: string) => void;
 }) {
   const tableLimit = Number(tableImportForm.limit);
+  const tablePreviewLimit = Number(tableImportForm.previewLimit);
   const sqlLimit = Number(sqlImportForm.limit);
+  const sqlPreviewLimit = Number(sqlImportForm.previewLimit);
   const canImportTable =
     activeConnection !== null &&
     selectedTable !== null &&
+    tablePreview !== null &&
+    tableFields.length > 0 &&
+    tableFields.every((field) => field.name.trim().length > 0) &&
     tableImportForm.datasetName.trim().length > 0 &&
     Number.isInteger(tableLimit) &&
     tableLimit >= 1 &&
     tableLimit <= 10000 &&
     !isImportingTable;
+  const canPreviewTable =
+    activeConnection !== null &&
+    selectedTable !== null &&
+    Number.isInteger(tablePreviewLimit) &&
+    tablePreviewLimit >= 1 &&
+    tablePreviewLimit <= 10000 &&
+    !isPreviewingTable;
   const canImportSql =
     activeConnection !== null &&
+    sqlPreview !== null &&
+    sqlFields.length > 0 &&
+    sqlFields.every((field) => field.name.trim().length > 0) &&
     sqlImportForm.datasetName.trim().length > 0 &&
     sqlImportForm.sql.trim().length > 0 &&
     Number.isInteger(sqlLimit) &&
     sqlLimit >= 1 &&
     sqlLimit <= 10000 &&
     !isImportingSql;
+  const canPreviewSql =
+    activeConnection !== null &&
+    sqlImportForm.sql.trim().length > 0 &&
+    Number.isInteger(sqlPreviewLimit) &&
+    sqlPreviewLimit >= 1 &&
+    sqlPreviewLimit <= 10000 &&
+    !isPreviewingSql;
 
   return (
     <div className="border-t border-line bg-slate-50/70 p-4">
@@ -977,10 +1185,11 @@ function ExternalImportWorkspace({
           <div className="space-y-4">
             <div className="rounded-md border border-line bg-white p-4">
               <p className="text-sm font-semibold text-ink">
-                Import selected table
+                Preview and import selected table
               </p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                Materialize a snapshot into a formal PostgreSQL-backed dataset.
+                Inspect a bounded sample, adjust fields, then materialize the
+                selected table into a formal dataset.
               </p>
               {selectedTable ? (
                 <div className="mt-4 space-y-3">
@@ -1001,8 +1210,20 @@ function ExternalImportWorkspace({
                     }
                   />
                   <TextInput
+                    id="external-table-preview-limit"
+                    label="Preview rows"
+                    placeholder="100"
+                    value={tableImportForm.previewLimit}
+                    onChange={(value) =>
+                      onUpdateTableImportForm({
+                        ...tableImportForm,
+                        previewLimit: value,
+                      })
+                    }
+                  />
+                  <TextInput
                     id="external-table-limit"
-                    label="Row limit"
+                    label="Import row limit"
                     placeholder="1000"
                     value={tableImportForm.limit}
                     onChange={(value) =>
@@ -1011,6 +1232,24 @@ function ExternalImportWorkspace({
                         limit: value,
                       })
                     }
+                  />
+                  <button
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-brand/20 bg-blue-50 px-4 text-sm font-semibold text-brand shadow-sm transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-45"
+                    disabled={!canPreviewTable}
+                    onClick={() => {
+                      if (activeConnection && selectedTable) {
+                        onPreviewTable(activeConnection.id, selectedTable);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <Database className="h-4 w-4" />
+                    {isPreviewingTable ? "Previewing..." : "Preview table"}
+                  </button>
+                  <ExternalPreviewEditor
+                    fields={tableFields}
+                    preview={tablePreview}
+                    onUpdateFields={onUpdateTableFields}
                   />
                   <button
                     className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
@@ -1023,9 +1262,12 @@ function ExternalImportWorkspace({
                     type="button"
                   >
                     <Database className="h-4 w-4" />
-                    {isImportingTable ? "Importing..." : "Import table"}
+                    {isImportingTable ? "Importing..." : "Confirm import"}
                   </button>
                   <ImportResultAlert result={importTableResult} />
+                  {previewTableError ? (
+                    <Alert message={previewTableError.message} tone="error" />
+                  ) : null}
                   {importTableError ? (
                     <Alert message={importTableError.message} tone="error" />
                   ) : null}
@@ -1056,10 +1298,22 @@ function ExternalImportWorkspace({
                       datasetName: value,
                     })
                   }
+                  />
+                <TextInput
+                  id="external-sql-preview-limit"
+                  label="Preview rows"
+                  placeholder="100"
+                  value={sqlImportForm.previewLimit}
+                  onChange={(value) =>
+                    onUpdateSqlImportForm({
+                      ...sqlImportForm,
+                      previewLimit: value,
+                    })
+                  }
                 />
                 <TextInput
                   id="external-sql-limit"
-                  label="Row limit"
+                  label="Import row limit"
                   placeholder="1000"
                   value={sqlImportForm.limit}
                   onChange={(value) =>
@@ -1086,6 +1340,24 @@ function ExternalImportWorkspace({
                   />
                 </label>
                 <button
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md border border-amber/30 bg-white px-4 text-sm font-semibold text-amber shadow-sm transition hover:bg-amber/10 disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={!canPreviewSql}
+                  onClick={() => {
+                    if (activeConnection) {
+                      onPreviewSql(activeConnection.id);
+                    }
+                  }}
+                  type="button"
+                >
+                  <Database className="h-4 w-4" />
+                  {isPreviewingSql ? "Previewing..." : "Preview SQL result"}
+                </button>
+                <ExternalPreviewEditor
+                  fields={sqlFields}
+                  preview={sqlPreview}
+                  onUpdateFields={onUpdateSqlFields}
+                />
+                <button
                   className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-amber px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-yellow-600 disabled:cursor-not-allowed disabled:opacity-45"
                   disabled={!canImportSql}
                   onClick={() => {
@@ -1096,17 +1368,272 @@ function ExternalImportWorkspace({
                   type="button"
                 >
                   <Database className="h-4 w-4" />
-                  {isImportingSql ? "Importing..." : "Import SQL result"}
+                  {isImportingSql ? "Importing..." : "Confirm SQL import"}
                 </button>
                 <ImportResultAlert result={importSqlResult} />
+                {previewSqlError ? (
+                  <Alert message={previewSqlError.message} tone="error" />
+                ) : null}
                 {importSqlError ? (
                   <Alert message={importSqlError.message} tone="error" />
                 ) : null}
               </div>
             </div>
           </div>
+          <ExternalImportHistoryPanel
+            detail={importDetail}
+            detailError={importDetailError}
+            history={importHistory}
+            historyError={importHistoryError}
+            isLoadingDetail={isLoadingImportDetail}
+            isLoadingHistory={isLoadingImportHistory}
+            onInspect={onInspectImport}
+          />
         </div>
       )}
+    </div>
+  );
+}
+
+function ExternalPreviewEditor({
+  preview,
+  fields,
+  onUpdateFields,
+}: {
+  preview: ExternalImportPreviewResponse | null;
+  fields: ImportFieldPreview[];
+  onUpdateFields: (fields: ImportFieldPreview[]) => void;
+}) {
+  if (!preview) {
+    return (
+      <div className="rounded-md border border-dashed border-line bg-slate-50 px-3 py-4 text-sm text-muted">
+        Preview data before confirming the import.
+      </div>
+    );
+  }
+
+  function updateField(index: number, patch: Partial<ImportFieldPreview>) {
+    onUpdateFields(
+      fields.map((field, fieldIndex) =>
+        fieldIndex === index ? { ...field, ...patch } : field,
+      ),
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-md border border-line bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase text-muted">
+          Preview result
+        </p>
+        <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-muted">
+          {preview.row_count.toLocaleString()} rows sampled
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-separate border-spacing-0 text-left text-xs">
+          <thead className="bg-slate-50 text-muted">
+            <tr>
+              <th className="border-b border-line px-2 py-2 font-semibold">
+                Field
+              </th>
+              <th className="border-b border-line px-2 py-2 font-semibold">
+                Type
+              </th>
+              <th className="border-b border-line px-2 py-2 font-semibold">
+                Null
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {fields.map((field, index) => (
+              <tr key={`${field.order}-${index}`}>
+                <td className="border-b border-line px-2 py-2">
+                  <input
+                    aria-label={`Field name ${field.order + 1}`}
+                    className="h-8 w-full min-w-28 rounded-md border border-line bg-white px-2 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
+                    value={field.name}
+                    onChange={(event) =>
+                      updateField(index, { name: event.target.value })
+                    }
+                  />
+                </td>
+                <td className="border-b border-line px-2 py-2">
+                  <select
+                    aria-label={`Field type ${field.order + 1}`}
+                    className="h-8 w-full min-w-24 rounded-md border border-line bg-white px-2 text-xs text-ink outline-none focus:border-brand focus:ring-2 focus:ring-blue-100"
+                    value={field.inferred_type}
+                    onChange={(event) =>
+                      updateField(index, {
+                        inferred_type: event.target.value as FieldType,
+                      })
+                    }
+                  >
+                    {FIELD_TYPES.map((fieldType) => (
+                      <option key={fieldType} value={fieldType}>
+                        {fieldType}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="border-b border-line px-2 py-2">
+                  <input
+                    aria-label={`Nullable ${field.order + 1}`}
+                    checked={field.nullable}
+                    className="h-4 w-4 rounded border-line text-brand"
+                    type="checkbox"
+                    onChange={(event) =>
+                      updateField(index, { nullable: event.target.checked })
+                    }
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="overflow-x-auto rounded-md border border-line">
+        <table className="min-w-full border-separate border-spacing-0 text-left text-xs">
+          <thead className="bg-slate-50 text-muted">
+            <tr>
+              {fields.slice(0, 5).map((field) => (
+                <th
+                  key={`sample-${field.order}`}
+                  className="border-b border-line px-2 py-2 font-semibold"
+                >
+                  {field.name}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {preview.sample_rows.slice(0, 3).map((row, rowIndex) => (
+              <tr key={`preview-row-${rowIndex}`}>
+                {preview.fields.slice(0, 5).map((sourceField) => (
+                  <td
+                    key={`${rowIndex}-${sourceField.order}`}
+                    className="max-w-36 truncate border-b border-line px-2 py-2 text-muted"
+                  >
+                    {formatCell(row[sourceField.name])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ExternalImportHistoryPanel({
+  history,
+  historyError,
+  detail,
+  detailError,
+  isLoadingHistory,
+  isLoadingDetail,
+  onInspect,
+}: {
+  history: ExternalImportHistoryItem[];
+  historyError: Error | null;
+  detail?: ExternalImportDetailResponse;
+  detailError: Error | null;
+  isLoadingHistory: boolean;
+  isLoadingDetail: boolean;
+  onInspect: (taskId: string) => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-md border border-line bg-white">
+      <div className="flex flex-col gap-2 border-b border-line px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-sm font-semibold text-ink">
+            External import history
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            Table and SQL imports are recorded through Task Center.
+          </p>
+        </div>
+        <span className="w-fit rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-brand">
+          {history.length.toLocaleString()} imports
+        </span>
+      </div>
+      {isLoadingHistory ? (
+        <StateMessage title="Loading external import history" />
+      ) : historyError ? (
+        <StateMessage title={historyError.message} tone="error" />
+      ) : history.length === 0 ? (
+        <StateMessage title="No external imports recorded yet" />
+      ) : (
+        <div className="divide-y divide-line">
+          {history.slice(0, 6).map((item) => (
+            <div key={item.task.id} className="p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold text-muted">
+                      {item.source_type === "external_table" ? "table" : "SQL"}
+                    </span>
+                    <TaskStatusChip status={item.task.status} />
+                  </div>
+                  <p className="mt-2 truncate text-sm font-semibold text-ink">
+                    {item.dataset_name ?? item.task.name}
+                  </p>
+                  <p className="mt-1 max-w-xl truncate font-mono text-xs text-muted">
+                    {item.source_type === "external_table"
+                      ? qualifiedExternalImportName(item)
+                      : item.sql}
+                  </p>
+                  {item.task.error_message ? (
+                    <p className="mt-2 rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
+                      {item.task.error_message}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="inline-flex h-8 items-center rounded-md border border-line bg-slate-50 px-3 text-xs font-semibold text-muted transition hover:bg-slate-100"
+                    onClick={() => onInspect(item.task.id)}
+                    type="button"
+                  >
+                    Detail
+                  </button>
+                  <Link
+                    className="inline-flex h-8 items-center rounded-md border border-brand/20 bg-blue-50 px-3 text-xs font-semibold text-brand transition hover:bg-blue-100"
+                    to={`/tasks?project_id=${encodeURIComponent(item.task.project_id ?? "")}`}
+                  >
+                    Task trace
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {isLoadingDetail ? (
+        <StateMessage title="Loading import detail" />
+      ) : detailError ? (
+        <StateMessage title={detailError.message} tone="error" />
+      ) : detail ? (
+        <div className="border-t border-line bg-slate-50 p-4">
+          <p className="text-xs font-semibold uppercase text-muted">
+            Selected import detail
+          </p>
+          <p className="mt-2 text-sm font-semibold text-ink">
+            {detail.item.dataset_name ?? detail.item.task.name}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {detail.fields.map((field) => (
+              <span
+                key={`${detail.item.task.id}-${field.order}`}
+                className="rounded-full border border-line bg-white px-2 py-1 text-[11px] text-muted"
+              >
+                {field.name}:{field.inferred_type}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1301,6 +1828,28 @@ function UploadStatusChip({ status }: { status: UploadStatus }) {
     >
       <Icon className="h-3.5 w-3.5" />
       {meta.label}
+    </span>
+  );
+}
+
+function TaskStatusChip({
+  status,
+}: {
+  status: ExternalImportHistoryItem["task"]["status"];
+}) {
+  const meta = {
+    failed: "border-red-200 bg-red-50 text-red-700",
+    pending: "border-amber/20 bg-amber/10 text-amber",
+    retryable: "border-amber/20 bg-amber/10 text-amber",
+    running: "border-cyan/20 bg-cyan/10 text-cyan",
+    success: "border-emerald/20 bg-emerald/10 text-emerald",
+  }[status];
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${meta}`}
+    >
+      {status}
     </span>
   );
 }
@@ -1507,6 +2056,23 @@ function qualifiedTableName(table: ExternalTable) {
   return table.schema_name
     ? `${table.schema_name}.${table.table_name}`
     : table.table_name;
+}
+
+function qualifiedExternalImportName(item: ExternalImportHistoryItem) {
+  if (!item.table_name) {
+    return "-";
+  }
+  return item.schema_name ? `${item.schema_name}.${item.table_name}` : item.table_name;
+}
+
+function formatCell(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+  return String(value);
 }
 
 function cleanDatasetNameFromExternalTable(tableName: string) {

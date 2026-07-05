@@ -5,6 +5,8 @@ from pydantic import ValidationError
 from app.cleaning.schemas import CleaningExecuteRequest
 from app.cleaning.service import CleaningService
 from app.core.errors import AppError
+from app.data_sources.schemas import ExternalSqlImportRequest, ExternalTableImportRequest
+from app.data_sources.service import DataSourceService
 from app.datasets.schemas import DatasetCreateRequest
 from app.datasets.service import DatasetService
 from app.imports.service import ImportService
@@ -28,6 +30,7 @@ class TaskRetryExecutor:
         tasks: TaskService,
         imports: ImportService,
         datasets: DatasetService,
+        data_sources: DataSourceService,
         cleaning: CleaningService,
         sql_workspace: SqlWorkspaceService,
         visualizations: VisualizationService,
@@ -35,6 +38,7 @@ class TaskRetryExecutor:
         self.tasks = tasks
         self.imports = imports
         self.datasets = datasets
+        self.data_sources = data_sources
         self.cleaning = cleaning
         self.sql_workspace = sql_workspace
         self.visualizations = visualizations
@@ -77,6 +81,24 @@ class TaskRetryExecutor:
             if operation == "dataset_materialization":
                 dataset = self.datasets.create_dataset(DatasetCreateRequest.model_validate(payload))
                 return "dataset", dataset.id
+
+            if operation == "external_table_import":
+                connection_id = require_string(payload, "connection_id")
+                result = self.data_sources.import_external_table(
+                    connection_id,
+                    ExternalTableImportRequest.model_validate(payload),
+                    self.datasets,
+                )
+                return "dataset", result.dataset.id
+
+            if operation == "external_sql_import":
+                connection_id = require_string(payload, "connection_id")
+                result = self.data_sources.import_external_sql(
+                    connection_id,
+                    ExternalSqlImportRequest.model_validate(payload),
+                    self.datasets,
+                )
+                return "dataset", result.dataset.id
 
             if operation == "cleaning_recipe_execution":
                 recipe_id = require_string(payload, "recipe_id")

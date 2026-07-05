@@ -4,6 +4,8 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.datasets.schemas import DatasetResponse
+from app.imports.schemas import ImportFieldPreview
+from app.tasks.schemas import TaskResponse
 
 DatabaseType = Literal["postgresql", "mysql"]
 ConnectionStatus = Literal["untested", "available", "failed"]
@@ -66,12 +68,34 @@ class ExternalDatabaseSchemaResponse(BaseModel):
     tables: list[ExternalTableResponse]
 
 
+class ExternalTablePreviewRequest(BaseModel):
+    project_id: str
+    schema_name: str = ""
+    table_name: str = Field(min_length=1, max_length=255)
+    limit: int = Field(default=100, ge=1, le=10000)
+
+
+class ExternalSqlPreviewRequest(BaseModel):
+    project_id: str
+    sql: str = Field(min_length=1)
+    limit: int = Field(default=100, ge=1, le=10000)
+
+
+class ExternalImportPreviewResponse(BaseModel):
+    source_type: Literal["external_table", "external_sql"]
+    fields: list[ImportFieldPreview]
+    sample_rows: list[dict[str, object | None]]
+    row_count: int
+    limit: int
+
+
 class ExternalTableImportRequest(BaseModel):
     project_id: str
     dataset_name: str = Field(min_length=1, max_length=120)
     schema_name: str = ""
     table_name: str = Field(min_length=1, max_length=255)
     limit: int = Field(default=1000, ge=1, le=10000)
+    fields: list[ImportFieldPreview] | None = None
 
 
 class ExternalSqlImportRequest(BaseModel):
@@ -79,9 +103,31 @@ class ExternalSqlImportRequest(BaseModel):
     dataset_name: str = Field(min_length=1, max_length=120)
     sql: str = Field(min_length=1)
     limit: int = Field(default=1000, ge=1, le=10000)
+    fields: list[ImportFieldPreview] | None = None
 
 
 class ExternalDatasetImportResponse(BaseModel):
     dataset: DatasetResponse
     source_type: Literal["external_table", "external_sql"]
     row_count: int
+
+
+class ExternalImportHistoryItemResponse(BaseModel):
+    task: TaskResponse
+    source_type: Literal["external_table", "external_sql"]
+    connection_id: str | None
+    dataset_name: str | None
+    schema_name: str | None
+    table_name: str | None
+    sql: str | None
+    limit: int | None
+    field_count: int | None
+
+
+class ExternalImportHistoryResponse(BaseModel):
+    items: list[ExternalImportHistoryItemResponse]
+
+
+class ExternalImportDetailResponse(BaseModel):
+    item: ExternalImportHistoryItemResponse
+    fields: list[ImportFieldPreview]

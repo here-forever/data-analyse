@@ -18,13 +18,22 @@ from app.data_sources.schemas import (
     ExternalDatabaseConnectionCreateRequest,
     ExternalDatabaseConnectionResponse,
     ExternalDatasetImportResponse,
+    ExternalImportDetailResponse,
+    ExternalImportHistoryItemResponse,
+    ExternalImportHistoryResponse,
+    ExternalImportPreviewResponse,
     ExternalSqlImportRequest,
+    ExternalSqlPreviewRequest,
     ExternalTableColumnResponse,
     ExternalTableImportRequest,
+    ExternalTablePreviewRequest,
     ExternalTableResponse,
 )
 from app.datasets.service import DatasetService, dataset_to_response_shape
+from app.imports.parser import coerce_value
+from app.imports.schemas import ImportFieldPreview
 from app.models.data_source import ExternalDatabaseConnection as ExternalDatabaseConnectionModel
+from app.tasks.service import TaskService, to_task_response
 
 DEFAULT_PORTS: dict[DatabaseType, int] = {
     "mysql": 3306,
@@ -188,12 +197,11 @@ class DataSourceService:
         self._record_schema_inspected(connection, tables)
         return connection, tables
 
-    def import_external_table(
+    def preview_external_table(
         self,
         connection_id: str,
-        payload: ExternalTableImportRequest,
-        datasets: DatasetService,
-    ) -> ExternalDatasetImportResponse:
+        payload: ExternalTablePreviewRequest,
+    ) -> ExternalImportPreviewResponse:
         connection = self._get_project_connection(
             connection_id=connection_id,
             project_id=payload.project_id,
@@ -204,25 +212,92 @@ class DataSourceService:
             table_name=payload.table_name,
             limit=payload.limit,
         )
+        return ExternalImportPreviewResponse(
+            source_type="external_table",
+            fields=source_result.fields,
+            sample_rows=source_result.rows,
+            row_count=len(source_result.rows),
+            limit=payload.limit,
+        )
+
+    def preview_external_sql(
+        self,
+        connection_id: str,
+        payload: ExternalSqlPreviewRequest,
+    ) -> ExternalImportPreviewResponse:
+        connection = self._get_project_connection(
+            connection_id=connection_id,
+            project_id=payload.project_id,
+        )
+        validate_read_only_sql(payload.sql)
+        source_result = self.tester.run_read_only_sql(
+            connection_to_config(connection),
+            sql=payload.sql,
+            limit=payload.limit,
+        )
+        return ExternalImportPreviewResponse(
+            source_type="external_sql",
+            fields=source_result.fields,
+            sample_rows=source_result.rows,
+            row_count=len(source_result.rows),
+            limit=payload.limit,
+        )
+
+    def import_external_table(
+        self,
+        connection_id: str,
+        payload: ExternalTableImportRequest,
+        datasets: DatasetService,
+    ) -> ExternalDatasetImportResponse:
+        connection = self._get_project_connection(
+            connection_id=connection_id,
+            project_id=payload.project_id,
+        )
         source_id = external_table_source_id(
             connection_id=connection.id,
             schema_name=payload.schema_name,
             table_name=payload.table_name,
         )
+        retry_payload = {
+            "operation": "external_table_import",
+            "connection_id": connection.id,
+            **payload.model_dump(),
+        }
+        try:
+            source_result = self.tester.read_table(
+                connection_to_config(connection),
+                schema_name=payload.schema_name,
+                table_name=payload.table_name,
+                limit=payload.limit,
+            )
+            fields = payload.fields or source_result.fields
+            retry_payload["fields"] = [field.model_dump() for field in fields]
+            rows = remap_external_rows(
+                source_fields=source_result.fields,
+                target_fields=fields,
+                rows=source_result.rows,
+            )
+        except Exception as error:
+            datasets.record_materialization_failure(
+                project_id=payload.project_id,
+                name=payload.dataset_name.strip(),
+                task_type="external_table_import",
+                error=error,
+                related_resource_type="external_database_table",
+                related_resource_id=source_id,
+                retry_payload=retry_payload,
+            )
+            raise
         dataset = datasets.create_materialized_dataset_from_rows(
             project_id=payload.project_id,
             name=payload.dataset_name.strip(),
-            fields=source_result.fields,
-            rows=source_result.rows,
+            fields=fields,
+            rows=rows,
             source_type="external_database_table",
             source_id=source_id,
             transform_type="external_table_import",
             task_type="external_table_import",
-            retry_payload={
-                "operation": "external_table_import",
-                "connection_id": connection.id,
-                **payload.model_dump(),
-            },
+            retry_payload=retry_payload,
         )
         self._record_dataset_imported(
             connection=connection,
@@ -253,26 +328,46 @@ class DataSourceService:
             project_id=payload.project_id,
         )
         validate_read_only_sql(payload.sql)
-        source_result = self.tester.run_read_only_sql(
-            connection_to_config(connection),
-            sql=payload.sql,
-            limit=payload.limit,
-        )
         source_id = external_sql_source_id(connection_id=connection.id, sql=payload.sql)
+        retry_payload = {
+            "operation": "external_sql_import",
+            "connection_id": connection.id,
+            **payload.model_dump(),
+        }
+        try:
+            source_result = self.tester.run_read_only_sql(
+                connection_to_config(connection),
+                sql=payload.sql,
+                limit=payload.limit,
+            )
+            fields = payload.fields or source_result.fields
+            retry_payload["fields"] = [field.model_dump() for field in fields]
+            rows = remap_external_rows(
+                source_fields=source_result.fields,
+                target_fields=fields,
+                rows=source_result.rows,
+            )
+        except Exception as error:
+            datasets.record_materialization_failure(
+                project_id=payload.project_id,
+                name=payload.dataset_name.strip(),
+                task_type="external_sql_import",
+                error=error,
+                related_resource_type="external_database_sql",
+                related_resource_id=source_id,
+                retry_payload=retry_payload,
+            )
+            raise
         dataset = datasets.create_materialized_dataset_from_rows(
             project_id=payload.project_id,
             name=payload.dataset_name.strip(),
-            fields=source_result.fields,
-            rows=source_result.rows,
+            fields=fields,
+            rows=rows,
             source_type="external_database_sql",
             source_id=source_id,
             transform_type="external_sql_import",
             task_type="external_sql_import",
-            retry_payload={
-                "operation": "external_sql_import",
-                "connection_id": connection.id,
-                **payload.model_dump(),
-            },
+            retry_payload=retry_payload,
         )
         self._record_dataset_imported(
             connection=connection,
@@ -289,6 +384,40 @@ class DataSourceService:
             dataset=dataset_to_response_shape(dataset),
             source_type="external_sql",
             row_count=dataset.row_count,
+        )
+
+    def list_external_import_history(
+        self,
+        *,
+        project_id: str,
+        tasks: TaskService,
+    ) -> ExternalImportHistoryResponse:
+        external_tasks = [
+            task
+            for task in tasks.list_tasks(project_id)
+            if task.task_type in ("external_table_import", "external_sql_import")
+        ]
+        return ExternalImportHistoryResponse(
+            items=[external_import_task_to_history_item(task) for task in external_tasks]
+        )
+
+    def get_external_import_detail(
+        self,
+        *,
+        task_id: str,
+        tasks: TaskService,
+    ) -> ExternalImportDetailResponse:
+        task = tasks.get_task(task_id)
+        if task.task_type not in ("external_table_import", "external_sql_import"):
+            raise AppError(
+                "Task is not an external database import",
+                "external_import_task_not_found",
+                404,
+            )
+        fields = external_import_payload_fields(task.retry_payload or {})
+        return ExternalImportDetailResponse(
+            item=external_import_task_to_history_item(task),
+            fields=fields,
         )
 
     def get_connection(self, connection_id: str) -> ExternalDatabaseConnection:
@@ -498,6 +627,73 @@ def external_table_to_response(table: ExternalTable) -> ExternalTableResponse:
             for column in table.columns
         ],
     )
+
+
+def remap_external_rows(
+    *,
+    source_fields: list[ImportFieldPreview],
+    target_fields: list[ImportFieldPreview],
+    rows: list[dict[str, object | None]],
+) -> list[dict[str, object | None]]:
+    source_fields_by_order = {field.order: field for field in source_fields}
+    materialized_rows: list[dict[str, object | None]] = []
+
+    for target_field in target_fields:
+        if target_field.order not in source_fields_by_order:
+            raise AppError(
+                "External import field order does not match source result",
+                "invalid_external_import_field_order",
+                400,
+            )
+
+    for row in rows:
+        materialized_row: dict[str, object | None] = {}
+        for target_field in target_fields:
+            source_field = source_fields_by_order[target_field.order]
+            materialized_row[target_field.name] = coerce_value(
+                row.get(source_field.name),
+                target_field.inferred_type,
+            )
+        materialized_rows.append(materialized_row)
+
+    return materialized_rows
+
+
+def external_import_task_to_history_item(task) -> ExternalImportHistoryItemResponse:
+    payload = task.retry_payload or {}
+    source_type = "external_sql" if task.task_type == "external_sql_import" else "external_table"
+    fields = external_import_payload_fields(payload)
+    return ExternalImportHistoryItemResponse(
+        task=to_task_response(task),
+        source_type=source_type,
+        connection_id=optional_string(payload.get("connection_id")),
+        dataset_name=optional_string(payload.get("dataset_name")),
+        schema_name=optional_string(payload.get("schema_name")),
+        table_name=optional_string(payload.get("table_name")),
+        sql=optional_string(payload.get("sql")),
+        limit=optional_int(payload.get("limit")),
+        field_count=len(fields) if fields else None,
+    )
+
+
+def external_import_payload_fields(payload: dict[str, object]) -> list[ImportFieldPreview]:
+    raw_fields = payload.get("fields")
+    if not isinstance(raw_fields, list):
+        return []
+
+    fields: list[ImportFieldPreview] = []
+    for raw_field in raw_fields:
+        if isinstance(raw_field, dict):
+            fields.append(ImportFieldPreview.model_validate(raw_field))
+    return fields
+
+
+def optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def optional_int(value: object) -> int | None:
+    return value if isinstance(value, int) else None
 
 
 def connection_to_config(
