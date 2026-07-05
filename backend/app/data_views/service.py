@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from hashlib import sha256
 
 from app.audit.service import AuditService
 from app.core.errors import AppError
@@ -191,7 +192,7 @@ class DataViewService:
         self.audit.record_lineage(
             project_id=data_view.project_id,
             source_type=data_view.source_type,
-            source_id=data_view.source_id or data_view.source_sql or data_view.id,
+            source_id=lineage_source_id(data_view),
             target_type="data_view",
             target_id=data_view.id,
             transform_type=f"{data_view.source_type}_materialization",
@@ -235,6 +236,28 @@ def validate_pagination(*, page: int, page_size: int) -> None:
 
 def build_data_view_table_name(data_view_id: str) -> str:
     return f"dv_{data_view_id.removeprefix('view_')[:24]}"
+
+
+def lineage_source_id(data_view: DataView) -> str:
+    if data_view.source_id:
+        if len(data_view.source_id) <= 128:
+            return data_view.source_id
+        return stable_lineage_reference(data_view.source_type, data_view.source_id)
+
+    if data_view.source_sql:
+        return stable_lineage_reference("sql_query", data_view.source_sql)
+
+    return data_view.id
+
+
+def stable_lineage_reference(source_type: str, value: str) -> str:
+    digest = sha256(value.encode("utf-8")).hexdigest()[:24]
+    prefix = "".join(
+        character if character.isalnum() or character == "_" else "_"
+        for character in source_type
+    ).strip("_") or "source"
+    reference = f"{prefix}_{digest}"
+    return reference[:128]
 
 
 data_view_service = DataViewService()

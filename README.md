@@ -4,13 +4,15 @@ A professional, usable, and extensible data analysis workspace that will gradual
 
 ## Current Status
 
-The project is in early implementation planning and infrastructure setup.
+The project has moved beyond planning into a demo-ready MVP foundation. The current implementation can run locally with Docker Compose and demonstrates the main data workflow with seeded example data.
 
-Completed documentation milestones:
+Implemented documentation milestones:
 
 - `docs/PROJECT_MEMORY.md` - project memory and long-term constraints.
 - `docs/MVP_ROADMAP.md` - MVP module, page, database, and milestone roadmap.
 - `docs/DEVELOPMENT_SETUP.md` - local setup notes.
+- `docs/IMPLEMENTATION_STATUS.md` - current implemented capabilities and limitations.
+- `docs/DEMO_GUIDE.md` - demo startup and walkthrough.
 
 ## Product Direction
 
@@ -58,13 +60,31 @@ See `docs/MVP_ROADMAP.md` for the full MVP roadmap.
 
 See `docs/DEVELOPMENT_SETUP.md` for local setup notes.
 
+## Run The Demo
+
+From the repository root:
+
+```powershell
+docker compose up -d --build
+docker compose exec backend python -m alembic upgrade head
+docker compose exec backend python /demo/scripts/seed_demo.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173
+```
+
+The seeded demo project is `prj_demo`. See `docs/DEMO_GUIDE.md` for the walkthrough.
+
 ## Git Workflow
 
 Use focused commits for meaningful milestones. Keep documentation updated when architecture decisions change.
 
 ## Backend Skeleton
 
-The backend skeleton provides:
+The backend currently provides:
 
 - FastAPI app factory.
 - `/api/health` endpoint.
@@ -73,12 +93,13 @@ The backend skeleton provides:
 - SQLAlchemy base, engine, and session factory.
 - Alembic environment.
 - Pytest test suite.
+- Auth, projects, permissions, import preview, dataset materialization, cleaning, SQL workspace, data views, charts, dashboards, tasks, audit/lineage, and external database intake MVP modules.
 
 Backend commands are documented in `backend/README.md`.
 
 ## Frontend Skeleton
 
-The frontend skeleton provides:
+The frontend currently provides:
 
 - Vite + React + TypeScript setup.
 - React Router app shell.
@@ -87,6 +108,7 @@ The frontend skeleton provides:
 - Typed API client helper.
 - Tailwind CSS design tokens.
 - Vitest and Testing Library tests.
+- Implemented pages for Data Sources, Import, Datasets, Cleaning, SQL Workspace, Charts, Dashboards, and Tasks.
 
 Frontend commands are documented in `frontend/README.md`.
 

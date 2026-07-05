@@ -7,15 +7,10 @@ import { DatasetPage } from "../features/datasets/DatasetPage";
 import { ImportWizardPage } from "../features/imports/ImportWizardPage";
 import { SqlWorkspacePage } from "../features/sql/SqlWorkspacePage";
 import { TaskCenterPage } from "../features/tasks/TaskCenterPage";
-import { PlaceholderPage } from "./PlaceholderPage";
+import { WorkspaceHomePage } from "./WorkspaceHomePage";
 
 export const routePlaceholders: Record<string, ReactNode> = {
-  "/": (
-    <PlaceholderPage
-      title="Professional data workspace"
-      description="Start from project data sources, create datasets, clean data, save reusable views, and build dashboards."
-    />
-  ),
+  "/": <WorkspaceHomePage />,
   "/data-sources": <DataSourcesPage />,
   "/import": <ImportWizardPage />,
   "/datasets": <DatasetPage />,

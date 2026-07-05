@@ -17,6 +17,8 @@ professional data analysis workspace
 
 Current implementation has moved beyond pure planning. The repository now has backend, frontend, Docker, database model, collaboration, import preview, formal dataset materialization, cleaning, SQL data views, chart/dashboard, audit/lineage hooks, task center foundations, and external database intake with preview, history, retry, and formal dataset materialization.
 
+The project now also has a demo-ready MVP seed path for `prj_demo`, so the current implementation can be opened as a real working demo instead of only being exercised through isolated API/tests.
+
 ## Implemented Documentation
 
 - Project memory and technical constraints: `docs/PROJECT_MEMORY.md`.
@@ -24,6 +26,7 @@ Current implementation has moved beyond pure planning. The repository now has ba
 - Local and Docker development setup: `docs/DEVELOPMENT_SETUP.md`.
 - Agent/development instructions: `AGENTS.md`.
 - Docker service notes: `docker/README.md`.
+- Demo walkthrough and seed instructions: `docs/DEMO_GUIDE.md`.
 
 ## Implemented Backend Foundation
 
@@ -78,6 +81,7 @@ Current implementation has moved beyond pure planning. The repository now has ba
 - External database imports are connected to task center, operation logs, basic lineage, dataset preview, and dataset quality profiling.
 - Basic operation log and lineage records for implemented workflow actions.
 - Persisted dataset fields and physical table name mapping.
+- Demo seed script that creates/reuses a fixed `prj_demo` project, imports example CSV data, creates a cleaned dataset, saves a SQL data view, saves charts, saves a dashboard, and keeps task/lineage traceability.
 
 ## Implemented Database Foundation
 
@@ -121,6 +125,7 @@ Initial core tables have been modeled and migrated:
 - Task center related-resource links for datasets, data views, charts, and dashboards, with target pages reading route query parameters for selection/highlighting.
 - Data source center external database panel for PostgreSQL/MySQL connection creation, saved connection listing, status display, connection error display, manual connection testing, schema discovery, preview-before-import, editable field confirmation, external table import, advanced read-only SQL import, and external import history/detail.
 - Placeholder pages remain only for features not yet implemented beyond the current data intake, dataset, cleaning, SQL, chart, dashboard, and task surfaces.
+- Workspace home page now acts as a demo entry screen linking into the main implemented workflow surfaces.
 - Frontend API client tests.
 
 ## Implemented Docker Foundation
@@ -144,6 +149,8 @@ Initial core tables have been modeled and migrated:
 - Frontend test suite passed: 26 tests.
 - Frontend lint passed.
 - Frontend build passed, with only the existing ECharts chunk-size warning.
+- Demo seed has been executed successfully through Docker Compose.
+- Frontend demo pages were checked through a headless Edge/Playwright pass against the running Docker stack: home, datasets, charts, dashboards, and tasks loaded expected demo content, and the chart page rendered an ECharts canvas.
 
 ## Current Limitations
 
@@ -166,6 +173,7 @@ Initial core tables have been modeled and migrated:
 - External connection passwords are currently stored through a base64-encoded MVP placeholder. This is not production-grade encryption; before open-source production use or team deployment, replace it with encrypted secret storage backed by a configured key or a proper secret manager.
 - External connection testing validates basic connectivity through the configured adapter and product-level read-only policy, but it does not yet prove the external database user lacks write privileges.
 - External custom SQL import uses the shared read-only SQL validator, but it is still not a full SQL firewall or database privilege audit.
+- If frontend dependencies change while using Docker Compose, the named `frontend_node_modules` volume may need `docker compose exec frontend npm install` or a volume reset to refresh installed packages.
 - API data sources are still reserved for later milestones.
 - Scheduled sync and distributed worker execution are not implemented yet.
 

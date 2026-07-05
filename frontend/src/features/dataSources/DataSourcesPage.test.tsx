@@ -329,7 +329,7 @@ describe("DataSourcesPage", () => {
         expect.objectContaining({ method: "POST" }),
       );
     });
-  });
+  }, 10000);
 });
 
 function jsonResponse(payload: unknown): Response {

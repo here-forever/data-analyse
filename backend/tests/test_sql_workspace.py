@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.core.database import get_db_session
+from app.models.audit import LineageEdge as LineageEdgeModel
 from app.models.audit import OperationLog as OperationLogModel
 
 
@@ -183,3 +184,53 @@ def test_sql_workspace_saves_query_result_as_data_view(client: TestClient) -> No
     assert saved_log is not None
     assert saved_log.resource_id == data_view["id"]
     assert saved_log.detail["row_count"] == 1
+
+
+def test_sql_data_view_lineage_uses_stable_short_reference_for_long_sql(
+    client: TestClient,
+) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+    dataset = create_dataset(client, headers, project_id)
+    long_sql = f"""
+SELECT
+  customer,
+  amount,
+  region,
+  amount AS amount_copy,
+  region AS region_copy
+FROM {dataset["id"]}
+WHERE region = 'West' OR region = 'East'
+ORDER BY customer
+"""
+
+    save_response = client.post(
+        "/api/sql/save-data-view",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "name": "Long SQL View",
+            "description": "Reusable long SQL result",
+            "sql": long_sql,
+            "limit": 100,
+        },
+    )
+
+    assert save_response.status_code == 200
+    data_view = save_response.json()
+    assert data_view["source_sql"] == long_sql
+
+    session = next(client.app.dependency_overrides[get_db_session]())
+    try:
+        lineage_edge = session.scalar(
+            select(LineageEdgeModel).where(
+                LineageEdgeModel.target_id == data_view["id"],
+                LineageEdgeModel.source_type == "sql_query",
+            )
+        )
+    finally:
+        session.close()
+
+    assert lineage_edge is not None
+    assert lineage_edge.source_id.startswith("sql_query_")
+    assert len(lineage_edge.source_id) <= 128

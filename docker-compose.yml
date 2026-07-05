@@ -47,6 +47,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./scripts:/demo/scripts:ro
+      - ./examples:/demo/examples:ro
       - backend_storage:/app/storage
     depends_on:
       postgres:

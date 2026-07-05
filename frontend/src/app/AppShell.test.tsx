@@ -12,6 +12,6 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Workspace" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Data Sources" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "SQL Workspace" })).toBeInTheDocument();
-    expect(screen.getByText("Professional data workspace")).toBeInTheDocument();
+    expect(screen.getByText("Professional data analysis workbench")).toBeInTheDocument();
   });
 });
