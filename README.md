@@ -74,7 +74,7 @@ GitHub Actions runs the equivalent backend and frontend checks for pushes and pu
 
 The tracked demo data is synthetic. Runtime uploads, local storage, `.env` files, credentials, database files, and private key formats are ignored by Git.
 
-The current authentication and external-credential storage remain development-oriented. Do not expose this MVP directly to the public internet. Review [`SECURITY.md`](SECURITY.md) before deployment or connector testing with non-demo systems.
+External database passwords are encrypted at rest with the configured `EXTERNAL_CONNECTION_ENCRYPTION_KEY`, and legacy development records are upgraded after a successful connection test. Authentication and key management remain development-oriented, so do not expose this MVP directly to the public internet. Review [`SECURITY.md`](SECURITY.md) before deployment or connector testing with non-demo systems.
 
 ## Project Direction
 

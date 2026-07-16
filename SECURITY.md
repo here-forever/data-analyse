@@ -7,8 +7,9 @@ This repository is an MVP data analysis workspace intended for local development
 Before any non-local deployment:
 
 - Replace `APP_SECRET_KEY`, PostgreSQL credentials, and development access tokens.
+- Set a strong, stable `EXTERNAL_CONNECTION_ENCRYPTION_KEY`, store it outside the repository, and include it in protected deployment backups. Changing or losing this key makes stored external-database credentials unreadable.
 - Replace development authentication with production-grade password hashing and token handling.
-- Replace the current base64 external-database password placeholder with encrypted secret storage or a secret manager.
+- Prefer a managed secret store for production deployments that require centralized credential rotation, access policies, or key auditing.
 - Use a least-privilege, read-only account for every external database connection.
 - Restrict CORS origins and network access to trusted hosts.
 - Review uploaded files and database contents before sharing logs, backups, screenshots, or bug reports.

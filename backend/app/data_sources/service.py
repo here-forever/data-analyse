@@ -1,10 +1,11 @@
-from base64 import b64decode, b64encode
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from app.audit.service import AuditService
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.ids import new_id
+from app.core.secrets import CredentialCipher, SecretDecryptionError
 from app.core.sql_safety import validate_read_only_sql
 from app.data_sources.connectors import (
     ConnectionTestResult,
@@ -15,8 +16,10 @@ from app.data_sources.connectors import (
 from app.data_sources.repository import DataSourceRepository
 from app.data_sources.schemas import (
     DatabaseType,
+    ExternalDatabaseConnectionActionRequest,
     ExternalDatabaseConnectionCreateRequest,
     ExternalDatabaseConnectionResponse,
+    ExternalDatabaseConnectionUpdateRequest,
     ExternalDatasetImportResponse,
     ExternalImportDetailResponse,
     ExternalImportHistoryItemResponse,
@@ -55,6 +58,7 @@ class ExternalDatabaseConnection:
     read_only: bool
     status: str
     last_error: str | None
+    archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -65,10 +69,12 @@ class DataSourceService:
         repository: DataSourceRepository | None = None,
         tester: ExternalDatabaseTester | None = None,
         audit: AuditService | None = None,
+        credential_cipher: CredentialCipher | None = None,
     ) -> None:
         self.repository = repository
         self.tester = tester or ExternalDatabaseTester()
         self.audit = audit
+        self.credential_cipher = credential_cipher or default_credential_cipher()
         self._connections: dict[str, ExternalDatabaseConnection] = {}
 
     def reset(self) -> None:
@@ -98,10 +104,11 @@ class DataSourceService:
             port=port,
             database_name=payload.database_name.strip(),
             username=payload.username.strip(),
-            password_secret=encode_secret(payload.password),
+            password_secret=self.credential_cipher.encrypt(payload.password),
             read_only=True,
             status="untested",
             last_error=None,
+            archived_at=None,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -157,25 +164,178 @@ class DataSourceService:
         self._connections[connection.id] = connection
         return connection
 
-    def list_connections(self, project_id: str) -> list[ExternalDatabaseConnection]:
+    def list_connections(
+        self,
+        project_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> list[ExternalDatabaseConnection]:
         if self.repository is not None:
             return [
                 model_to_connection(connection)
-                for connection in self.repository.list_connections(project_id)
+                for connection in self.repository.list_connections(
+                    project_id,
+                    include_archived=include_archived,
+                )
             ]
 
         return [
             connection
             for connection in self._connections.values()
             if connection.project_id == project_id
+            and (include_archived or connection.archived_at is None)
         ]
+
+    def update_connection(
+        self,
+        connection_id: str,
+        payload: ExternalDatabaseConnectionUpdateRequest,
+    ) -> ExternalDatabaseConnection:
+        connection = self._get_connection_including_archived(connection_id)
+        self._validate_project(connection, payload.project_id)
+        if connection.archived_at is not None:
+            raise AppError(
+                "Archived external database connection must be restored before editing",
+                "external_connection_archived",
+                409,
+            )
+        if payload.read_only is False:
+            raise AppError(
+                "External database connections must be read-only in the first stage",
+                "external_connection_must_be_read_only",
+                400,
+            )
+
+        name = payload.name.strip() if payload.name is not None else connection.name
+        existing = self._get_connection_by_name(project_id=connection.project_id, name=name)
+        if existing is not None and existing.id != connection.id:
+            raise AppError(
+                "External database connection name already exists in this project",
+                "external_connection_name_conflict",
+                409,
+            )
+
+        database_type = payload.database_type or connection.database_type
+        port = payload.port
+        if port is None:
+            port = (
+                DEFAULT_PORTS[database_type]
+                if payload.database_type is not None
+                and payload.database_type != connection.database_type
+                else connection.port
+            )
+        password_rotated = payload.password is not None
+        password_secret = (
+            self.credential_cipher.encrypt(payload.password)
+            if payload.password is not None
+            else connection.password_secret
+        )
+        changes = {
+            "name": name,
+            "database_type": database_type,
+            "host": payload.host.strip() if payload.host is not None else connection.host,
+            "port": port,
+            "database_name": (
+                payload.database_name.strip()
+                if payload.database_name is not None
+                else connection.database_name
+            ),
+            "username": (
+                payload.username.strip() if payload.username is not None else connection.username
+            ),
+            "password_secret": password_secret,
+            "read_only": True,
+            "status": "untested",
+            "last_error": None,
+        }
+
+        if self.repository is not None:
+            model = self.repository.get_connection(connection.id)
+            if model is None:
+                raise AppError(
+                    "External database connection not found",
+                    "external_connection_not_found",
+                    404,
+                )
+            for field, value in changes.items():
+                setattr(model, field, value)
+            updated = model_to_connection(self.repository.update_connection(model))
+        else:
+            updated = replace(connection, **changes, updated_at=datetime.now())
+            self._connections[updated.id] = updated
+
+        self._record_updated(updated, password_rotated=password_rotated)
+        return updated
+
+    def archive_connection(
+        self,
+        connection_id: str,
+        payload: ExternalDatabaseConnectionActionRequest,
+    ) -> ExternalDatabaseConnection:
+        connection = self._get_connection_including_archived(connection_id)
+        self._validate_project(connection, payload.project_id)
+        if connection.archived_at is not None:
+            return connection
+        archived_at = datetime.now()
+
+        if self.repository is not None:
+            model = self.repository.get_connection(connection.id)
+            if model is None:
+                raise AppError(
+                    "External database connection not found",
+                    "external_connection_not_found",
+                    404,
+                )
+            model.archived_at = archived_at
+            archived = model_to_connection(self.repository.update_connection(model))
+        else:
+            archived = replace(connection, archived_at=archived_at, updated_at=archived_at)
+            self._connections[archived.id] = archived
+
+        self._record_lifecycle(archived, action="archived")
+        return archived
+
+    def restore_connection(
+        self,
+        connection_id: str,
+        payload: ExternalDatabaseConnectionActionRequest,
+    ) -> ExternalDatabaseConnection:
+        connection = self._get_connection_including_archived(connection_id)
+        self._validate_project(connection, payload.project_id)
+        if connection.archived_at is None:
+            return connection
+
+        if self.repository is not None:
+            model = self.repository.get_connection(connection.id)
+            if model is None:
+                raise AppError(
+                    "External database connection not found",
+                    "external_connection_not_found",
+                    404,
+                )
+            model.archived_at = None
+            model.status = "untested"
+            model.last_error = None
+            restored = model_to_connection(self.repository.update_connection(model))
+        else:
+            restored = replace(
+                connection,
+                archived_at=None,
+                status="untested",
+                last_error=None,
+                updated_at=datetime.now(),
+            )
+            self._connections[restored.id] = restored
+
+        self._record_lifecycle(restored, action="restored")
+        return restored
 
     def test_connection(
         self, connection_id: str
     ) -> tuple[ExternalDatabaseConnection, ConnectionTestResult]:
         connection = self.get_connection(connection_id)
         try:
-            result = self.tester.test_connection(connection_to_config(connection))
+            result = self.tester.test_connection(self._connection_to_config(connection))
         except Exception as error:
             result = ConnectionTestResult(
                 ok=False,
@@ -193,7 +353,7 @@ class DataSourceService:
         list[ExternalTable],
     ]:
         connection = self.get_connection(connection_id)
-        tables = self.tester.inspect_schema(connection_to_config(connection))
+        tables = self.tester.inspect_schema(self._connection_to_config(connection))
         self._record_schema_inspected(connection, tables)
         return connection, tables
 
@@ -207,7 +367,7 @@ class DataSourceService:
             project_id=payload.project_id,
         )
         source_result = self.tester.read_table(
-            connection_to_config(connection),
+            self._connection_to_config(connection),
             schema_name=payload.schema_name,
             table_name=payload.table_name,
             limit=payload.limit,
@@ -231,7 +391,7 @@ class DataSourceService:
         )
         validate_read_only_sql(payload.sql)
         source_result = self.tester.run_read_only_sql(
-            connection_to_config(connection),
+            self._connection_to_config(connection),
             sql=payload.sql,
             limit=payload.limit,
         )
@@ -265,7 +425,7 @@ class DataSourceService:
         }
         try:
             source_result = self.tester.read_table(
-                connection_to_config(connection),
+                self._connection_to_config(connection),
                 schema_name=payload.schema_name,
                 table_name=payload.table_name,
                 limit=payload.limit,
@@ -336,7 +496,7 @@ class DataSourceService:
         }
         try:
             source_result = self.tester.run_read_only_sql(
-                connection_to_config(connection),
+                self._connection_to_config(connection),
                 sql=payload.sql,
                 limit=payload.limit,
             )
@@ -421,6 +581,19 @@ class DataSourceService:
         )
 
     def get_connection(self, connection_id: str) -> ExternalDatabaseConnection:
+        connection = self._get_connection_including_archived(connection_id)
+        if connection.archived_at is not None:
+            raise AppError(
+                "External database connection is archived",
+                "external_connection_archived",
+                409,
+            )
+        return connection
+
+    def _get_connection_including_archived(
+        self,
+        connection_id: str,
+    ) -> ExternalDatabaseConnection:
         if self.repository is not None:
             connection = self.repository.get_connection(connection_id)
             if connection is None:
@@ -435,6 +608,55 @@ class DataSourceService:
                 "External database connection not found", "external_connection_not_found", 404
             )
         return connection
+
+    def _get_connection_by_name(
+        self,
+        *,
+        project_id: str,
+        name: str,
+    ) -> ExternalDatabaseConnection | None:
+        if self.repository is not None:
+            connection = self.repository.get_connection_by_name(project_id=project_id, name=name)
+            return model_to_connection(connection) if connection is not None else None
+        return next(
+            (
+                connection
+                for connection in self._connections.values()
+                if connection.project_id == project_id and connection.name == name
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _validate_project(connection: ExternalDatabaseConnection, project_id: str) -> None:
+        if connection.project_id != project_id:
+            raise AppError(
+                "External database connection does not belong to this project",
+                "external_connection_project_mismatch",
+                400,
+            )
+
+    def _connection_to_config(
+        self,
+        connection: ExternalDatabaseConnection,
+    ) -> ExternalDatabaseConnectionConfig:
+        try:
+            password = self.credential_cipher.decrypt(connection.password_secret)
+        except SecretDecryptionError as error:
+            raise AppError(
+                "External database credential cannot be decrypted. "
+                "Check the configured encryption key.",
+                "external_connection_secret_unreadable",
+                500,
+            ) from error
+        return ExternalDatabaseConnectionConfig(
+            database_type=connection.database_type,
+            host=connection.host,
+            port=connection.port,
+            database_name=connection.database_name,
+            username=connection.username,
+            password=password,
+        )
 
     def _get_project_connection(
         self,
@@ -467,6 +689,9 @@ class DataSourceService:
                 )
             model.status = status
             model.last_error = last_error
+            if self.credential_cipher.is_legacy(model.password_secret):
+                password = self.credential_cipher.decrypt(model.password_secret)
+                model.password_secret = self.credential_cipher.encrypt(password)
             return model_to_connection(self.repository.update_connection(model))
 
         updated = ExternalDatabaseConnection(
@@ -482,6 +707,7 @@ class DataSourceService:
             read_only=connection.read_only,
             status=status,
             last_error=last_error,
+            archived_at=connection.archived_at,
             created_at=connection.created_at,
             updated_at=datetime.now(),
         )
@@ -503,6 +729,54 @@ class DataSourceService:
                 "port": connection.port,
                 "database_name": connection.database_name,
                 "read_only": connection.read_only,
+            },
+        )
+
+    def _record_updated(
+        self,
+        connection: ExternalDatabaseConnection,
+        *,
+        password_rotated: bool,
+    ) -> None:
+        if self.audit is None:
+            return
+
+        self.audit.record_operation(
+            action="data_source.external_database_updated",
+            project_id=connection.project_id,
+            resource_type="external_database_connection",
+            resource_id=connection.id,
+            detail={
+                "database_type": connection.database_type,
+                "host": connection.host,
+                "port": connection.port,
+                "database_name": connection.database_name,
+                "username": connection.username,
+                "password_rotated": password_rotated,
+                "status": connection.status,
+            },
+        )
+
+    def _record_lifecycle(
+        self,
+        connection: ExternalDatabaseConnection,
+        *,
+        action: str,
+    ) -> None:
+        if self.audit is None:
+            return
+
+        self.audit.record_operation(
+            action=f"data_source.external_database_{action}",
+            project_id=connection.project_id,
+            resource_type="external_database_connection",
+            resource_id=connection.id,
+            detail={
+                "archived_at": (
+                    connection.archived_at.isoformat()
+                    if connection.archived_at is not None
+                    else None
+                ),
             },
         )
 
@@ -587,6 +861,7 @@ def model_to_connection(
         read_only=connection.read_only,
         status=connection.status,
         last_error=connection.last_error,
+        archived_at=connection.archived_at,
         created_at=connection.created_at,
         updated_at=connection.updated_at,
     )
@@ -607,6 +882,7 @@ def to_external_database_connection_response(
         read_only=connection.read_only,
         status=connection.status,
         last_error=connection.last_error,
+        archived_at=connection.archived_at,
         created_at=connection.created_at,
         updated_at=connection.updated_at,
     )
@@ -698,14 +974,16 @@ def optional_int(value: object) -> int | None:
 
 def connection_to_config(
     connection: ExternalDatabaseConnection,
+    credential_cipher: CredentialCipher | None = None,
 ) -> ExternalDatabaseConnectionConfig:
+    cipher = credential_cipher or default_credential_cipher()
     return ExternalDatabaseConnectionConfig(
         database_type=connection.database_type,
         host=connection.host,
         port=connection.port,
         database_name=connection.database_name,
         username=connection.username,
-        password=decode_secret(connection.password_secret),
+        password=cipher.decrypt(connection.password_secret),
     )
 
 
@@ -724,12 +1002,18 @@ def external_sql_source_id(*, connection_id: str, sql: str) -> str:
     return f"{connection_id}:{compact_sql[:96]}"
 
 
+def default_credential_cipher() -> CredentialCipher:
+    settings = get_settings()
+    secret_key = settings.external_connection_encryption_key or settings.app_secret_key
+    return CredentialCipher(secret_key)
+
+
 def encode_secret(value: str) -> str:
-    return b64encode(value.encode("utf-8")).decode("ascii")
+    return default_credential_cipher().encrypt(value)
 
 
 def decode_secret(value: str) -> str:
-    return b64decode(value.encode("ascii")).decode("utf-8")
+    return default_credential_cipher().decrypt(value)
 
 
 data_source_service = DataSourceService()

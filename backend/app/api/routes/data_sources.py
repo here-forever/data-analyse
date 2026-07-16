@@ -10,10 +10,12 @@ from app.auth.service import User
 from app.core.database import get_db_session
 from app.data_sources.repository import DataSourceRepository
 from app.data_sources.schemas import (
+    ExternalDatabaseConnectionActionRequest,
     ExternalDatabaseConnectionCreateRequest,
     ExternalDatabaseConnectionListResponse,
     ExternalDatabaseConnectionResponse,
     ExternalDatabaseConnectionTestResponse,
+    ExternalDatabaseConnectionUpdateRequest,
     ExternalDatabaseSchemaResponse,
     ExternalDatasetImportResponse,
     ExternalImportDetailResponse,
@@ -82,12 +84,58 @@ def create_external_database_connection(
 def list_external_database_connections(
     project_id: str,
     data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+    include_archived: bool = False,
 ) -> ExternalDatabaseConnectionListResponse:
     return ExternalDatabaseConnectionListResponse(
         items=[
             to_external_database_connection_response(connection)
-            for connection in data_sources.list_connections(project_id)
+            for connection in data_sources.list_connections(
+                project_id,
+                include_archived=include_archived,
+            )
         ]
+    )
+
+
+@router.patch(
+    "/external-databases/{connection_id}",
+    response_model=ExternalDatabaseConnectionResponse,
+)
+def update_external_database_connection(
+    connection_id: str,
+    payload: ExternalDatabaseConnectionUpdateRequest,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+) -> ExternalDatabaseConnectionResponse:
+    return to_external_database_connection_response(
+        data_sources.update_connection(connection_id, payload)
+    )
+
+
+@router.post(
+    "/external-databases/{connection_id}/archive",
+    response_model=ExternalDatabaseConnectionResponse,
+)
+def archive_external_database_connection(
+    connection_id: str,
+    payload: ExternalDatabaseConnectionActionRequest,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+) -> ExternalDatabaseConnectionResponse:
+    return to_external_database_connection_response(
+        data_sources.archive_connection(connection_id, payload)
+    )
+
+
+@router.post(
+    "/external-databases/{connection_id}/restore",
+    response_model=ExternalDatabaseConnectionResponse,
+)
+def restore_external_database_connection(
+    connection_id: str,
+    payload: ExternalDatabaseConnectionActionRequest,
+    data_sources: Annotated[DataSourceService, Depends(get_data_source_service)],
+) -> ExternalDatabaseConnectionResponse:
+    return to_external_database_connection_response(
+        data_sources.restore_connection(connection_id, payload)
     )
 
 

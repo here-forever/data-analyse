@@ -101,6 +101,33 @@ describe("apiClient", () => {
     });
   });
 
+  test("patches JSON resources", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: "src_1" }),
+    });
+    const client = createApiClient({
+      baseUrl: "http://localhost/api",
+      fetcher: fetchMock,
+    });
+
+    await client.patch("/data-sources/external-databases/src_1", {
+      host: "warehouse.local",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost/api/data-sources/external-databases/src_1",
+      {
+        body: JSON.stringify({ host: "warehouse.local" }),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      },
+    );
+  });
+
   test("posts FormData without forcing content type", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

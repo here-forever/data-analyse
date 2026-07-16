@@ -5,12 +5,7 @@ import type { TaskItem } from "../tasks/api";
 export type DatabaseType = "postgresql" | "mysql";
 export type ExternalConnectionStatus = "untested" | "available" | "failed";
 export type FieldType =
-  | "integer"
-  | "decimal"
-  | "date"
-  | "datetime"
-  | "boolean"
-  | "text";
+  "integer" | "decimal" | "date" | "datetime" | "boolean" | "text";
 
 export interface ExternalDatabaseConnection {
   id: string;
@@ -24,6 +19,7 @@ export interface ExternalDatabaseConnection {
   read_only: boolean;
   status: ExternalConnectionStatus;
   last_error: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -42,6 +38,18 @@ export interface ExternalDatabaseConnectionCreatePayload {
 
 export interface ExternalDatabaseConnectionListResponse {
   items: ExternalDatabaseConnection[];
+}
+
+export interface ExternalDatabaseConnectionUpdatePayload {
+  project_id: string;
+  name: string;
+  database_type: DatabaseType;
+  host: string;
+  port: number;
+  database_name: string;
+  username: string;
+  password?: string;
+  read_only: boolean;
 }
 
 export interface ExternalDatabaseConnectionTestResponse {
@@ -152,12 +160,44 @@ export async function createExternalDatabaseConnection(
 
 export async function listExternalDatabaseConnections(
   projectId: string,
+  includeArchived = false,
 ): Promise<ExternalDatabaseConnectionListResponse> {
   return apiClient.get<ExternalDatabaseConnectionListResponse>(
     "/data-sources/external-databases",
     {
       project_id: projectId,
+      include_archived: includeArchived,
     },
+  );
+}
+
+export async function updateExternalDatabaseConnection(
+  connectionId: string,
+  payload: ExternalDatabaseConnectionUpdatePayload,
+): Promise<ExternalDatabaseConnection> {
+  return apiClient.patch<ExternalDatabaseConnection>(
+    `/data-sources/external-databases/${connectionId}`,
+    payload,
+  );
+}
+
+export async function archiveExternalDatabaseConnection(
+  connectionId: string,
+  projectId: string,
+): Promise<ExternalDatabaseConnection> {
+  return apiClient.post<ExternalDatabaseConnection>(
+    `/data-sources/external-databases/${connectionId}/archive`,
+    { project_id: projectId },
+  );
+}
+
+export async function restoreExternalDatabaseConnection(
+  connectionId: string,
+  projectId: string,
+): Promise<ExternalDatabaseConnection> {
+  return apiClient.post<ExternalDatabaseConnection>(
+    `/data-sources/external-databases/${connectionId}/restore`,
+    { project_id: projectId },
   );
 }
 

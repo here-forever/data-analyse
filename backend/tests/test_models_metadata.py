@@ -29,3 +29,11 @@ def test_dataset_fields_reserve_sensitivity_metadata() -> None:
 
     assert "is_sensitive" in columns
     assert "masking_strategy" in columns
+
+
+def test_external_connections_support_recoverable_archival() -> None:
+    import_models()
+
+    columns = Base.metadata.tables["external_database_connections"].columns
+
+    assert "archived_at" in columns

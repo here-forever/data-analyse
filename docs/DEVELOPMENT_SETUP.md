@@ -1,6 +1,6 @@
 # Development Setup
 
-Last updated: 2026-07-04
+Last updated: 2026-07-16
 
 ## Current Environment Status
 
@@ -104,6 +104,14 @@ cd ..
 ```
 
 ## Docker Compose Commands
+
+Before creating real external database connections, set a stable local encryption key in `.env`:
+
+```text
+EXTERNAL_CONNECTION_ENCRYPTION_KEY=replace-with-a-long-random-local-key
+```
+
+Keep this value private and stable. Existing external database passwords cannot be decrypted after the key changes.
 
 Start the integrated development stack:
 

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     upload_storage_root: str = "./storage/uploads"
     access_token_expire_minutes: int = 1440
     password_hash_scheme: str = "bcrypt"
+    external_connection_encryption_key: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

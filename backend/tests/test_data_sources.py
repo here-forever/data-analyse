@@ -1,3 +1,6 @@
+from base64 import b64encode
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -20,7 +23,9 @@ from app.data_sources.connectors import (
 )
 from app.data_sources.repository import DataSourceRepository
 from app.data_sources.schemas import (
+    ExternalDatabaseConnectionActionRequest,
     ExternalDatabaseConnectionCreateRequest,
+    ExternalDatabaseConnectionUpdateRequest,
     ExternalSqlImportRequest,
     ExternalTableImportRequest,
     ExternalTablePreviewRequest,
@@ -228,6 +233,7 @@ def test_external_database_connection_api_create_list_and_test(client: TestClien
     assert connection["port"] == 5432
     assert connection["read_only"] is True
     assert connection["status"] == "untested"
+    assert connection["archived_at"] is None
     assert "password" not in connection
 
     list_response = client.get(
@@ -263,6 +269,87 @@ def test_external_database_connection_api_create_list_and_test(client: TestClien
     assert test_payload["connection"]["last_error"] is None
     assert tester.configs[0].database_type == "postgresql"
     assert tester.configs[0].password == "secret-password"
+
+
+def test_external_database_connection_api_updates_archives_and_restores(
+    client: TestClient,
+) -> None:
+    headers = login(client)
+    project_id = create_project(client, headers)
+    create_response = client.post(
+        "/api/data-sources/external-databases",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "name": "Warehouse",
+            "database_type": "postgresql",
+            "host": "warehouse.local",
+            "database_name": "analytics",
+            "username": "readonly_user",
+            "password": "secret-password",
+        },
+    )
+    connection_id = create_response.json()["id"]
+
+    update_response = client.patch(
+        f"/api/data-sources/external-databases/{connection_id}",
+        headers=headers,
+        json={
+            "project_id": project_id,
+            "name": "Warehouse primary",
+            "database_type": "mysql",
+            "host": "mysql.local",
+            "database_name": "reporting",
+            "username": "report_reader",
+            "password": "rotated-password",
+            "read_only": True,
+        },
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "Warehouse primary"
+    assert update_response.json()["database_type"] == "mysql"
+    assert update_response.json()["port"] == 3306
+    assert update_response.json()["status"] == "untested"
+    assert "password" not in update_response.json()
+
+    archive_response = client.post(
+        f"/api/data-sources/external-databases/{connection_id}/archive",
+        headers=headers,
+        json={"project_id": project_id},
+    )
+    assert archive_response.status_code == 200
+    assert archive_response.json()["archived_at"] is not None
+
+    active_list_response = client.get(
+        "/api/data-sources/external-databases",
+        headers=headers,
+        params={"project_id": project_id},
+    )
+    assert active_list_response.json()["items"] == []
+
+    archived_list_response = client.get(
+        "/api/data-sources/external-databases",
+        headers=headers,
+        params={"project_id": project_id, "include_archived": True},
+    )
+    assert archived_list_response.json()["items"][0]["id"] == connection_id
+
+    test_response = client.post(
+        f"/api/data-sources/external-databases/{connection_id}/test",
+        headers=headers,
+    )
+    assert test_response.status_code == 409
+    assert test_response.json()["error"]["code"] == "external_connection_archived"
+
+    restore_response = client.post(
+        f"/api/data-sources/external-databases/{connection_id}/restore",
+        headers=headers,
+        json={"project_id": project_id},
+    )
+    assert restore_response.status_code == 200
+    assert restore_response.json()["archived_at"] is None
+    assert restore_response.json()["status"] == "untested"
 
 
 def test_external_database_api_discovers_schema_and_imports_datasets(
@@ -496,8 +583,9 @@ def test_data_source_service_tests_connection_with_saved_secret_and_audit() -> N
     session = create_test_session()
     project_id, actor_id = create_project_in_session(session)
     tester = FakeTester()
+    repository = DataSourceRepository(session)
     service = DataSourceService(
-        DataSourceRepository(session),
+        repository,
         tester=tester,
         audit=AuditService(AuditRepository(session), actor_id=actor_id),
     )
@@ -535,6 +623,88 @@ def test_data_source_service_tests_connection_with_saved_secret_and_audit() -> N
     assert {log.action for log in logs} >= {
         "data_source.external_database_created",
         "data_source.external_database_tested",
+    }
+
+
+def test_data_source_service_encrypts_rotates_and_archives_credentials() -> None:
+    session = create_test_session()
+    project_id, actor_id = create_project_in_session(session)
+    tester = FakeTester()
+    repository = DataSourceRepository(session)
+    service = DataSourceService(
+        repository,
+        tester=tester,
+        audit=AuditService(AuditRepository(session), actor_id=actor_id),
+    )
+    connection = service.create_connection(
+        ExternalDatabaseConnectionCreateRequest(
+            project_id=project_id,
+            name="Warehouse",
+            database_type="postgresql",
+            host="warehouse.local",
+            database_name="analytics",
+            username="readonly_user",
+            password="secret-password",
+        )
+    )
+
+    assert connection.password_secret.startswith("fernet:v1:")
+    assert "secret-password" not in connection.password_secret
+    assert decode_secret(connection.password_secret) == "secret-password"
+
+    legacy_model = repository.get_connection(connection.id)
+    assert legacy_model is not None
+    legacy_model.password_secret = b64encode(b"secret-password").decode("ascii")
+    repository.update_connection(legacy_model)
+    service.test_connection(connection.id)
+    upgraded_model = repository.get_connection(connection.id)
+    assert upgraded_model is not None
+    assert upgraded_model.password_secret.startswith("fernet:v1:")
+
+    updated = service.update_connection(
+        connection.id,
+        ExternalDatabaseConnectionUpdateRequest(
+            project_id=project_id,
+            host="warehouse-primary.local",
+        ),
+    )
+    service.test_connection(updated.id)
+    assert tester.configs[-1].password == "secret-password"
+
+    rotated = service.update_connection(
+        connection.id,
+        ExternalDatabaseConnectionUpdateRequest(
+            project_id=project_id,
+            password="rotated-password",
+        ),
+    )
+    service.test_connection(rotated.id)
+    assert tester.configs[-1].password == "rotated-password"
+
+    archived = service.archive_connection(
+        connection.id,
+        ExternalDatabaseConnectionActionRequest(project_id=project_id),
+    )
+    assert archived.archived_at is not None
+    assert service.list_connections(project_id) == []
+    assert service.list_connections(project_id, include_archived=True)[0].id == connection.id
+
+    with pytest.raises(AppError) as exc_info:
+        service.test_connection(connection.id)
+    assert exc_info.value.code == "external_connection_archived"
+
+    restored = service.restore_connection(
+        connection.id,
+        ExternalDatabaseConnectionActionRequest(project_id=project_id),
+    )
+    assert restored.archived_at is None
+    assert restored.status == "untested"
+
+    actions = {log.action for log in session.scalars(select(OperationLogModel)).all()}
+    assert actions >= {
+        "data_source.external_database_updated",
+        "data_source.external_database_archived",
+        "data_source.external_database_restored",
     }
 
 

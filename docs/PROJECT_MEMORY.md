@@ -1,6 +1,6 @@
 # Project Memory: Integrated Data Analysis System
 
-Last updated: 2026-07-04
+Last updated: 2026-07-16
 
 ## 1. Project Positioning
 
@@ -450,6 +450,7 @@ Recommended frontend stack:
 Frontend style:
 
 - Combine professional technology style with lightweight modern style.
+- Use the Figma Community "Workshop Toolkit" (`https://www.figma.com/community/file/1052895535654165715`) as the main visual-mood reference, not as a page template or reusable asset library.
 - Daily work areas should be clean and readable.
 - Analysis/report pages can be more colorful and data-rich.
 - Do not build a generic gray admin template.
@@ -457,6 +458,10 @@ Frontend style:
 - Use the Figma Make reference "Analytics Dashboard with Cross Filtering" as an information-architecture reference, not as a visual template to copy directly.
 - Borrow its useful dashboard structure: clear page header, global filters, KPI/summary metric band, active selection feedback, multi-panel chart grid, full-width detail chart/table areas, and cross-filtering interactions between visuals.
 - Avoid the reference's overly plain white/gray feeling. The product should use a softer, more artistic data-workbench style with gentle layered backgrounds, tasteful multi-color accents, warm/cool contrast, and color-coded analytical surfaces.
+- Translate the Workshop Toolkit mood into airy sky blue, lilac, soft rose, mint, and warm neutral canvas layers, with clear white or lightly tinted work surfaces above them.
+- Use friendly, confident page titles and occasional small sticker-like accents for workspace home, onboarding, empty states, and completion feedback. Keep those accents original to this project and away from dense data operations.
+- Preserve compact professional density in tables, SQL editors, cleaning forms, task lists, and chart controls. The surrounding shell can feel playful, but the work surface must remain stable, legible, and efficient.
+- Do not directly copy community-file artwork. Any future third-party visual asset must have a compatible license, documented source, and tracked attribution.
 - The interface should feel friendly and creative while still being professional: soft canvas tones, restrained shadows, subtle borders, calm typography, and polished spacing.
 - Do not make the system look like a hard-core dark cyber/tech dashboard, a generic SaaS admin template, or a single-hue BI clone.
 - Keep data readability first: colorful surfaces must not reduce table legibility, chart contrast, form clarity, or dense workflow efficiency.

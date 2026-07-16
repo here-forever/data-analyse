@@ -39,6 +39,7 @@ services:
       APP_ENV: development
       APP_DEBUG: "true"
       APP_SECRET_KEY: ${APP_SECRET_KEY:-local-development-only-secret}
+      EXTERNAL_CONNECTION_ENCRYPTION_KEY: ${EXTERNAL_CONNECTION_ENCRYPTION_KEY:-local-development-only-credential-key}
       BACKEND_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-data_analysis_user}:${POSTGRES_PASSWORD:-data_analysis_password}@postgres:5432/${POSTGRES_DB:-data_analysis_system}
       REDIS_URL: redis://redis:6379/0

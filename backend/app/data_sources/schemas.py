@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.datasets.schemas import DatasetResponse
 from app.imports.schemas import ImportFieldPreview
@@ -23,6 +23,29 @@ class ExternalDatabaseConnectionCreateRequest(BaseModel):
     read_only: bool = True
 
 
+class ExternalDatabaseConnectionUpdateRequest(BaseModel):
+    project_id: str
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    database_type: DatabaseType | None = None
+    host: str | None = Field(default=None, min_length=1, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    database_name: str | None = Field(default=None, min_length=1, max_length=120)
+    username: str | None = Field(default=None, min_length=1, max_length=120)
+    password: str | None = Field(default=None, min_length=1)
+    read_only: bool | None = None
+
+    @model_validator(mode="after")
+    def require_update_field(self) -> "ExternalDatabaseConnectionUpdateRequest":
+        values = self.model_dump(exclude={"project_id"}, exclude_none=True)
+        if not values:
+            raise ValueError("At least one connection field must be provided")
+        return self
+
+
+class ExternalDatabaseConnectionActionRequest(BaseModel):
+    project_id: str
+
+
 class ExternalDatabaseConnectionResponse(BaseModel):
     id: str
     project_id: str
@@ -35,6 +58,7 @@ class ExternalDatabaseConnectionResponse(BaseModel):
     read_only: bool
     status: ConnectionStatus
     last_error: str | None
+    archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
 

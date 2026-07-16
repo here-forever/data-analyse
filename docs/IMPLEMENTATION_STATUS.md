@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-05
+Last updated: 2026-07-16
 
 This document records what has already been implemented so the project can continue without losing context.
 
@@ -72,6 +72,8 @@ The project now also has a demo-ready MVP seed path for `prj_demo`, so the curre
 - External database connection creation with first-stage read-only policy enforcement.
 - External database connection test API using SQLAlchemy adapters for PostgreSQL and MySQL.
 - External database connection responses intentionally omit stored passwords.
+- External database passwords are encrypted at rest with a versioned Fernet credential format and a dedicated environment key, with read compatibility and test-time upgrade for legacy base64 records.
+- External database connections support metadata updates, optional password rotation, recoverable archive, and restore flows with operation logs.
 - External PostgreSQL/MySQL schema and table discovery API.
 - External table and read-only SQL preview APIs before formal import.
 - External table import into formal PostgreSQL-backed datasets.
@@ -123,7 +125,8 @@ Initial core tables have been modeled and migrated:
 - Task center page with project filtering, status summary, workflow coverage, and recent task table.
 - Task center retry entry controlled by backend retry eligibility, with immediate list refresh and completion feedback.
 - Task center related-resource links for datasets, data views, charts, and dashboards, with target pages reading route query parameters for selection/highlighting.
-- Data source center external database panel for PostgreSQL/MySQL connection creation, saved connection listing, status display, connection error display, manual connection testing, schema discovery, preview-before-import, editable field confirmation, external table import, advanced read-only SQL import, and external import history/detail.
+- Data source center external database panel for PostgreSQL/MySQL connection creation, encrypted credential rotation, metadata editing, recoverable archive/restore, saved connection listing, status display, connection error display, manual connection testing, schema discovery, preview-before-import, editable field confirmation, external table import, advanced read-only SQL import, and external import history/detail.
+- Tailwind design tokens now include the Workshop Toolkit-inspired sky, lilac, rose, and mint palette for gradual frontend visual-system adoption.
 - Placeholder pages remain only for features not yet implemented beyond the current data intake, dataset, cleaning, SQL, chart, dashboard, and task surfaces.
 - Workspace home page now acts as a demo entry screen linking into the main implemented workflow surfaces.
 - Frontend API client tests.
@@ -145,8 +148,8 @@ Initial core tables have been modeled and migrated:
 - Backend health check is reachable at `http://127.0.0.1:8000/api/health`.
 - Alembic migration has been applied to Docker PostgreSQL.
 - Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, related-resource navigation, external PostgreSQL/MySQL connection create/list/test flows, schema discovery, external preview, field-edited import, external table import retry, external import history/detail, external table import, and external read-only SQL import were verified through tests or API flows.
-- Backend test suite passed locally: 55 tests.
-- Frontend test suite passed: 26 tests.
+- Backend test suite passed locally: 59 tests.
+- Frontend test suite passed: 28 tests.
 - Frontend lint passed.
 - Frontend build passed, with only the existing ECharts chunk-size warning.
 - Demo seed has been executed successfully through Docker Compose.
@@ -170,7 +173,7 @@ Initial core tables have been modeled and migrated:
 - Authentication is still development-oriented and not production JWT/auth hardening.
 - External database imports currently preview and materialize bounded snapshots through row limits; scheduled sync, incremental sync, and streaming/large-table import are not implemented yet.
 - External table/SQL import retry is synchronous inside the API request and replays the read/import operation, but it is not yet backed by a distributed worker.
-- External connection passwords are currently stored through a base64-encoded MVP placeholder. This is not production-grade encryption; before open-source production use or team deployment, replace it with encrypted secret storage backed by a configured key or a proper secret manager.
+- External connection passwords use application-level encrypted storage, but production deployments still need protected key distribution, backup, and rotation procedures or a managed secret store.
 - External connection testing validates basic connectivity through the configured adapter and product-level read-only policy, but it does not yet prove the external database user lacks write privileges.
 - External custom SQL import uses the shared read-only SQL validator, but it is still not a full SQL firewall or database privilege audit.
 - If frontend dependencies change while using Docker Compose, the named `frontend_node_modules` volume may need `docker compose exec frontend npm install` or a volume reset to refresh installed packages.
@@ -187,13 +190,14 @@ Future work must preserve these boundaries:
 - Avoid silent overwrites and accidental hard deletion of user assets.
 - Prefer small, meaningful Git commits after each milestone.
 - Keep the first stage as a modular monolith with clear future extraction boundaries.
+- Use the Figma Community "Workshop Toolkit" as the primary visual-mood reference while retaining the existing analytics-dashboard reference for information architecture. The product should combine soft pastel layers and friendly accents with compact, professional data work surfaces.
 
 ## Recommended Next Build Step
 
-The next implementation step should continue strengthening external intake and prepare broader data-source maturity:
+The next implementation step should make larger imports reliable without jumping directly to a distributed platform:
 
-1. Add external connection update/archive flows and clearer credential rotation behavior.
-2. Add encrypted secret storage before open-source production deployment.
-3. Add larger-table import strategy design: chunked reads, background worker handoff, progress updates, and eventual scheduled sync.
+1. Add chunked reads and batched PostgreSQL writes for larger file and external-database imports.
+2. Move long-running imports behind the existing task boundary with progress updates and cancellation-safe failure records.
+3. Introduce a lightweight worker adapter that can later switch to Redis/Celery or RQ before scheduled sync is added.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

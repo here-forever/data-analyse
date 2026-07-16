@@ -95,6 +95,7 @@ describe("DataSourcesPage", () => {
                 read_only: true,
                 status: "available",
                 last_error: null,
+                archived_at: null,
                 created_at: "2026-07-04T10:00:00Z",
                 updated_at: "2026-07-04T10:01:00Z",
               },
@@ -174,7 +175,9 @@ describe("DataSourcesPage", () => {
         }
 
         if (
-          url.endsWith("/data-sources/external-databases/src_1/preview-table") &&
+          url.endsWith(
+            "/data-sources/external-databases/src_1/preview-table",
+          ) &&
           init?.method === "POST"
         ) {
           expect(init.body).toContain('"schema_name":"public"');
@@ -318,7 +321,9 @@ describe("DataSourcesPage", () => {
       screen.getByRole("button", { name: "Preview SQL result" }),
     );
     expect(await screen.findByDisplayValue("region")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Confirm SQL import" }));
+    await user.click(
+      screen.getByRole("button", { name: "Confirm SQL import" }),
+    );
 
     expect(
       await screen.findByText("Created SQL Orders (1 rows)"),
@@ -329,6 +334,114 @@ describe("DataSourcesPage", () => {
         expect.objectContaining({ method: "POST" }),
       );
     });
+  }, 10000);
+
+  test("updates, archives, and restores a saved connection", async () => {
+    let archivedAt: string | null = null;
+    let host = connectionPayload.host;
+    fetchMock.mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+
+        if (url.includes("/imports/uploads")) {
+          return Promise.resolve(jsonResponse({ items: [] }));
+        }
+        if (url.includes("/datasets")) {
+          return Promise.resolve(jsonResponse({ items: [] }));
+        }
+        if (url.includes("/data-sources/external-imports")) {
+          return Promise.resolve(jsonResponse({ items: [] }));
+        }
+        if (
+          url.endsWith("/data-sources/external-databases/src_1") &&
+          init?.method === "PATCH"
+        ) {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          expect(body.password).toBeUndefined();
+          expect(body.host).toBe("warehouse-primary.local");
+          host = String(body.host);
+          return Promise.resolve(
+            jsonResponse({
+              ...connectionPayload,
+              host,
+              archived_at: archivedAt,
+              status: "untested",
+              last_error: null,
+            }),
+          );
+        }
+        if (
+          url.endsWith("/data-sources/external-databases/src_1/archive") &&
+          init?.method === "POST"
+        ) {
+          archivedAt = "2026-07-16T11:00:00Z";
+          return Promise.resolve(
+            jsonResponse({
+              ...connectionPayload,
+              host,
+              archived_at: archivedAt,
+            }),
+          );
+        }
+        if (
+          url.endsWith("/data-sources/external-databases/src_1/restore") &&
+          init?.method === "POST"
+        ) {
+          archivedAt = null;
+          return Promise.resolve(
+            jsonResponse({
+              ...connectionPayload,
+              host,
+              archived_at: archivedAt,
+              status: "untested",
+            }),
+          );
+        }
+        if (url.includes("/data-sources/external-databases")) {
+          return Promise.resolve(
+            jsonResponse({
+              items: [
+                {
+                  ...connectionPayload,
+                  host,
+                  archived_at: archivedAt,
+                  status: "untested",
+                  last_error: null,
+                },
+              ],
+            }),
+          );
+        }
+
+        return Promise.resolve(jsonResponse({}));
+      },
+    );
+    const user = userEvent.setup();
+
+    renderWithProviders(<DataSourcesPage />);
+
+    await screen.findByText("Warehouse readonly");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const hostInput = screen.getByLabelText("Host");
+    await user.clear(hostInput);
+    await user.type(hostInput, "warehouse-primary.local");
+    await user.click(screen.getByRole("button", { name: "Update connection" }));
+
+    expect(
+      await screen.findByText(
+        "Updated Warehouse readonly. Test it before the next import.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+    expect(
+      await screen.findByRole("button", { name: "Restore" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Restore" }));
+    expect(
+      await screen.findByRole("button", { name: "Edit" }),
+    ).toBeInTheDocument();
   }, 10000);
 });
 
@@ -349,6 +462,7 @@ const connectionPayload = {
   database_name: "analytics",
   username: "readonly_user",
   read_only: true,
+  archived_at: null,
   created_at: "2026-07-04T10:00:00Z",
   updated_at: "2026-07-04T10:01:00Z",
 };

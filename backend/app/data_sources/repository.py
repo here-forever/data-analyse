@@ -42,11 +42,22 @@ class DataSourceRepository:
             )
         )
 
-    def list_connections(self, project_id: str) -> list[ExternalDatabaseConnectionModel]:
+    def list_connections(
+        self,
+        project_id: str,
+        *,
+        include_archived: bool = False,
+    ) -> list[ExternalDatabaseConnectionModel]:
+        statement = select(ExternalDatabaseConnectionModel).where(
+            ExternalDatabaseConnectionModel.project_id == project_id
+        )
+        if not include_archived:
+            statement = statement.where(ExternalDatabaseConnectionModel.archived_at.is_(None))
         return list(
             self.session.scalars(
-                select(ExternalDatabaseConnectionModel)
-                .where(ExternalDatabaseConnectionModel.project_id == project_id)
-                .order_by(ExternalDatabaseConnectionModel.created_at.desc())
+                statement.order_by(
+                    ExternalDatabaseConnectionModel.archived_at.is_not(None),
+                    ExternalDatabaseConnectionModel.created_at.desc(),
+                )
             )
         )

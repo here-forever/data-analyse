@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
+  Archive,
   CheckCircle2,
   Clock3,
   Database,
   FileSpreadsheet,
   FileUp,
   History,
+  Pencil,
   RefreshCcw,
+  RotateCcw,
   Search,
   Server,
   SquareCode,
@@ -22,6 +25,7 @@ import {
   type UploadStatus,
 } from "../imports/api";
 import {
+  archiveExternalDatabaseConnection,
   createExternalDatabaseConnection,
   getExternalImportDetail,
   importExternalSql,
@@ -31,12 +35,15 @@ import {
   listExternalDatabaseConnections,
   previewExternalSql,
   previewExternalTable,
+  restoreExternalDatabaseConnection,
   testExternalDatabaseConnection,
+  updateExternalDatabaseConnection,
   type DatabaseType,
   type ExternalConnectionStatus,
   type ExternalDatabaseSchemaResponse,
   type ExternalDatabaseConnection,
   type ExternalDatabaseConnectionCreatePayload,
+  type ExternalDatabaseConnectionUpdatePayload,
   type ExternalDatasetImportResponse,
   type ExternalImportDetailResponse,
   type ExternalImportHistoryItem,
@@ -377,6 +384,9 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(
     null,
   );
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(
+    null,
+  );
   const [selectedTableKey, setSelectedTableKey] = useState<string | null>(null);
   const [tableImportForm, setTableImportForm] = useState<TableImportFormState>(
     DEFAULT_TABLE_IMPORT_FORM,
@@ -396,7 +406,7 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
 
   const connectionsQuery = useQuery({
     queryKey: ["external-database-connections", projectId],
-    queryFn: () => listExternalDatabaseConnections(projectId),
+    queryFn: () => listExternalDatabaseConnections(projectId, true),
     enabled: projectId.trim().length > 0,
   });
 
@@ -412,6 +422,49 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
         databaseType: current.databaseType,
         port: DEFAULT_DATABASE_PORTS[current.databaseType],
       }));
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({
+      connectionId,
+      payload,
+    }: {
+      connectionId: string;
+      payload: ExternalDatabaseConnectionUpdatePayload;
+    }) => updateExternalDatabaseConnection(connectionId, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["external-database-connections", projectId],
+      });
+      setEditingConnectionId(null);
+      setForm(DEFAULT_EXTERNAL_CONNECTION_FORM);
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (connectionId: string) =>
+      archiveExternalDatabaseConnection(connectionId, projectId),
+    onSuccess: (connection) => {
+      void queryClient.invalidateQueries({
+        queryKey: ["external-database-connections", projectId],
+      });
+      if (activeConnectionId === connection.id) {
+        setActiveConnectionId(null);
+      }
+      if (editingConnectionId === connection.id) {
+        cancelEditing();
+      }
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (connectionId: string) =>
+      restoreExternalDatabaseConnection(connectionId, projectId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ["external-database-connections", projectId],
+      });
     },
   });
 
@@ -533,7 +586,11 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
     [connectionsQuery.data?.items],
   );
   const activeConnection = connections.find(
-    (connection) => connection.id === activeConnectionId,
+    (connection) =>
+      connection.id === activeConnectionId && connection.archived_at == null,
+  );
+  const editingConnection = connections.find(
+    (connection) => connection.id === editingConnectionId,
   );
   const selectedTable = useMemo(
     () =>
@@ -551,9 +608,10 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
     form.host.trim().length > 0 &&
     form.databaseName.trim().length > 0 &&
     form.username.trim().length > 0 &&
-    form.password.length > 0 &&
+    (editingConnectionId !== null || form.password.length > 0) &&
     isValidPort &&
-    !createMutation.isPending;
+    !createMutation.isPending &&
+    !updateMutation.isPending;
 
   function updateField<K extends keyof ExternalConnectionFormState>(
     key: K,
@@ -582,6 +640,27 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
     importSqlMutation.reset();
     previewTableMutation.reset();
     previewSqlMutation.reset();
+  }
+
+  function startEditing(connection: ExternalDatabaseConnection) {
+    setEditingConnectionId(connection.id);
+    setForm({
+      databaseName: connection.database_name,
+      databaseType: connection.database_type,
+      host: connection.host,
+      name: connection.name,
+      password: "",
+      port: String(connection.port),
+      username: connection.username,
+    });
+    createMutation.reset();
+    updateMutation.reset();
+  }
+
+  function cancelEditing() {
+    setEditingConnectionId(null);
+    setForm(DEFAULT_EXTERNAL_CONNECTION_FORM);
+    updateMutation.reset();
   }
 
   function selectTable(table: ExternalTable) {
@@ -627,17 +706,29 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
       return;
     }
 
-    createMutation.mutate({
+    const payload = {
       database_name: form.databaseName.trim(),
       database_type: form.databaseType,
       host: form.host.trim(),
       name: form.name.trim(),
-      password: form.password,
       port: portNumber,
       project_id: projectId.trim(),
       read_only: true,
       username: form.username.trim(),
-    });
+    };
+    if (editingConnectionId !== null) {
+      updateMutation.mutate({
+        connectionId: editingConnectionId,
+        payload: {
+          ...payload,
+          ...(form.password.length > 0 ? { password: form.password } : {}),
+        },
+      });
+      return;
+    }
+
+    updateMutation.reset();
+    createMutation.mutate({ ...payload, password: form.password });
   }
 
   return (
@@ -645,16 +736,19 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
       <PanelHeader icon={Server} title="External database connections" />
       <div className="grid gap-4 p-4 2xl:grid-cols-[360px_minmax(0,1fr)]">
         <form
-          className="space-y-4 rounded-md border border-emerald/20 bg-emerald/10 p-4"
+          className="space-y-4 rounded-md border border-lilac/20 bg-lilac/10 p-4"
           onSubmit={submitConnection}
         >
           <div>
             <p className="text-sm font-semibold text-ink">
-              Save read-only connection
+              {editingConnection
+                ? "Edit connection"
+                : "Save read-only connection"}
             </p>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Store connection metadata, keep the password hidden, and verify
-              the database can answer a read-only test query.
+              {editingConnection
+                ? "Update endpoint metadata or enter a new password to rotate the stored credential."
+                : "Store encrypted connection metadata, then verify the database can answer a read-only test query."}
             </p>
           </div>
 
@@ -665,8 +759,8 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
                 className={[
                   "h-9 rounded-md border px-3 text-xs font-semibold transition",
                   form.databaseType === databaseType
-                    ? "border-emerald bg-emerald text-white shadow-sm"
-                    : "border-emerald/20 bg-white text-emerald hover:bg-emerald/10",
+                    ? "border-lilac bg-lilac text-white shadow-sm"
+                    : "border-lilac/20 bg-white text-lilac hover:bg-lilac/10",
                 ].join(" ")}
                 onClick={() => updateDatabaseType(databaseType)}
                 type="button"
@@ -715,17 +809,21 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
             <TextInput
               id="external-connection-password"
               label="Password"
-              placeholder="Stored as secret placeholder"
+              placeholder={
+                editingConnection
+                  ? "Leave blank to keep current password"
+                  : "Encrypted before storage"
+              }
               type="password"
               value={form.password}
               onChange={(value) => updateField("password", value)}
             />
           </div>
 
-          <label className="flex items-start gap-2 rounded-md border border-emerald/20 bg-white px-3 py-2 text-xs leading-5 text-muted">
+          <label className="flex items-start gap-2 rounded-md border border-mint/20 bg-white px-3 py-2 text-xs leading-5 text-muted">
             <input
               checked
-              className="mt-0.5 h-4 w-4 rounded border-line text-emerald"
+              className="mt-0.5 h-4 w-4 rounded border-line text-mint"
               readOnly
               type="checkbox"
             />
@@ -739,13 +837,27 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
           ) : null}
 
           <button
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-emerald px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-45"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
             disabled={!canSave}
             type="submit"
           >
             <Database className="h-4 w-4" />
-            {createMutation.isPending ? "Saving..." : "Save connection"}
+            {createMutation.isPending || updateMutation.isPending
+              ? "Saving..."
+              : editingConnection
+                ? "Update connection"
+                : "Save connection"}
           </button>
+
+          {editingConnection ? (
+            <button
+              className="h-9 w-full rounded-md border border-line bg-white px-3 text-xs font-semibold text-muted transition hover:bg-slate-50 hover:text-ink"
+              onClick={cancelEditing}
+              type="button"
+            >
+              Cancel editing
+            </button>
+          ) : null}
 
           {createMutation.data ? (
             <Alert
@@ -756,6 +868,15 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
           {createMutation.error ? (
             <Alert message={createMutation.error.message} tone="error" />
           ) : null}
+          {updateMutation.data ? (
+            <Alert
+              message={`Updated ${updateMutation.data.name}. Test it before the next import.`}
+              tone="success"
+            />
+          ) : null}
+          {updateMutation.error ? (
+            <Alert message={updateMutation.error.message} tone="error" />
+          ) : null}
         </form>
 
         <ExternalConnectionList
@@ -764,11 +885,21 @@ function ExternalDatabasePanel({ projectId }: { projectId: string }) {
           isLoading={connectionsQuery.isLoading || connectionsQuery.isFetching}
           testError={testMutation.error}
           testResult={testMutation.data}
+          actionError={archiveMutation.error ?? restoreMutation.error}
+          archivingConnectionId={
+            archiveMutation.isPending ? archiveMutation.variables : undefined
+          }
+          restoringConnectionId={
+            restoreMutation.isPending ? restoreMutation.variables : undefined
+          }
           testingConnectionId={
             testMutation.isPending ? testMutation.variables : undefined
           }
           onTest={(connectionId) => testMutation.mutate(connectionId)}
           onInspect={inspectConnection}
+          onArchive={(connectionId) => archiveMutation.mutate(connectionId)}
+          onEdit={startEditing}
+          onRestore={(connectionId) => restoreMutation.mutate(connectionId)}
         />
       </div>
       <ExternalImportWorkspace
@@ -826,21 +957,36 @@ function ExternalConnectionList({
   connections,
   isLoading,
   error,
+  actionError,
+  archivingConnectionId,
+  restoringConnectionId,
   testingConnectionId,
   testResult,
   testError,
   onTest,
   onInspect,
+  onArchive,
+  onEdit,
+  onRestore,
 }: {
   connections: ExternalDatabaseConnection[];
   isLoading: boolean;
   error: Error | null;
+  actionError: Error | null;
+  archivingConnectionId?: string;
+  restoringConnectionId?: string;
   testingConnectionId?: string;
   testResult?: { ok: boolean; message: string };
   testError: Error | null;
   onTest: (connectionId: string) => void;
   onInspect: (connectionId: string) => void;
+  onArchive: (connectionId: string) => void;
+  onEdit: (connection: ExternalDatabaseConnection) => void;
+  onRestore: (connectionId: string) => void;
 }) {
+  const activeCount = connections.filter(
+    (connection) => connection.archived_at == null,
+  ).length;
   return (
     <div className="min-w-0 rounded-md border border-line bg-white">
       <div className="flex flex-col gap-2 border-b border-line px-4 py-3 md:flex-row md:items-center md:justify-between">
@@ -852,7 +998,8 @@ function ExternalConnectionList({
           </p>
         </div>
         <span className="w-fit rounded-full bg-cyan/10 px-2.5 py-1 text-xs font-semibold text-cyan">
-          {connections.length.toLocaleString()} connections
+          {activeCount.toLocaleString()} active /{" "}
+          {connections.length.toLocaleString()} total
         </span>
       </div>
 
@@ -871,6 +1018,11 @@ function ExternalConnectionList({
       {testError ? (
         <div className="border-b border-line bg-red-50 px-4 py-3 text-sm text-red-700">
           {testError.message}
+        </div>
+      ) : null}
+      {actionError ? (
+        <div className="border-b border-line bg-red-50 px-4 py-3 text-sm text-red-700">
+          {actionError.message}
         </div>
       ) : null}
 
@@ -910,8 +1062,13 @@ function ExternalConnectionList({
                 <ExternalConnectionRow
                   key={connection.id}
                   connection={connection}
+                  isArchiving={archivingConnectionId === connection.id}
+                  isRestoring={restoringConnectionId === connection.id}
                   isTesting={testingConnectionId === connection.id}
+                  onArchive={onArchive}
+                  onEdit={onEdit}
                   onInspect={onInspect}
+                  onRestore={onRestore}
                   onTest={onTest}
                 />
               ))}
@@ -925,17 +1082,32 @@ function ExternalConnectionList({
 
 function ExternalConnectionRow({
   connection,
+  isArchiving,
+  isRestoring,
   isTesting,
+  onArchive,
+  onEdit,
   onInspect,
+  onRestore,
   onTest,
 }: {
   connection: ExternalDatabaseConnection;
+  isArchiving: boolean;
+  isRestoring: boolean;
   isTesting: boolean;
+  onArchive: (connectionId: string) => void;
+  onEdit: (connection: ExternalDatabaseConnection) => void;
   onInspect: (connectionId: string) => void;
+  onRestore: (connectionId: string) => void;
   onTest: (connectionId: string) => void;
 }) {
+  const isArchived = connection.archived_at != null;
   return (
-    <tr className="align-top hover:bg-slate-50">
+    <tr
+      className={
+        isArchived ? "align-top bg-slate-50/80" : "align-top hover:bg-slate-50"
+      }
+    >
       <td className="border-b border-line px-4 py-3">
         <p className="max-w-xs truncate font-semibold text-ink">
           {connection.name}
@@ -953,8 +1125,15 @@ function ExternalConnectionRow({
         <p className="mt-1 text-xs text-muted">{connection.username}</p>
       </td>
       <td className="border-b border-line px-4 py-3">
-        <ExternalConnectionStatusChip status={connection.status} />
-        {connection.last_error ? (
+        {isArchived ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-slate-100 px-2.5 py-1 text-xs font-semibold text-muted">
+            <Archive className="h-3.5 w-3.5" />
+            Archived
+          </span>
+        ) : (
+          <ExternalConnectionStatusChip status={connection.status} />
+        )}
+        {!isArchived && connection.last_error ? (
           <p className="mt-2 max-w-sm rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
             {connection.last_error}
           </p>
@@ -965,23 +1144,54 @@ function ExternalConnectionRow({
       </td>
       <td className="border-b border-line px-4 py-3">
         <div className="flex flex-wrap gap-2">
-          <button
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-emerald/30 bg-emerald/10 px-3 text-xs font-semibold text-emerald transition hover:bg-emerald/20 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isTesting}
-            onClick={() => onTest(connection.id)}
-            type="button"
-          >
-            <RefreshCcw className="h-3.5 w-3.5" />
-            {isTesting ? "Testing" : "Test"}
-          </button>
-          <button
-            className="inline-flex h-8 items-center gap-2 rounded-md border border-brand/20 bg-blue-50 px-3 text-xs font-semibold text-brand transition hover:bg-blue-100"
-            onClick={() => onInspect(connection.id)}
-            type="button"
-          >
-            <Database className="h-3.5 w-3.5" />
-            Discover
-          </button>
+          {isArchived ? (
+            <button
+              className="inline-flex h-8 items-center gap-2 rounded-md border border-cyan/20 bg-cyan/10 px-3 text-xs font-semibold text-cyan transition hover:bg-cyan/20 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isRestoring}
+              onClick={() => onRestore(connection.id)}
+              type="button"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              {isRestoring ? "Restoring" : "Restore"}
+            </button>
+          ) : (
+            <>
+              <button
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-emerald/30 bg-emerald/10 px-3 text-xs font-semibold text-emerald transition hover:bg-emerald/20 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={isTesting}
+                onClick={() => onTest(connection.id)}
+                type="button"
+              >
+                <RefreshCcw className="h-3.5 w-3.5" />
+                {isTesting ? "Testing" : "Test"}
+              </button>
+              <button
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-brand/20 bg-blue-50 px-3 text-xs font-semibold text-brand transition hover:bg-blue-100"
+                onClick={() => onInspect(connection.id)}
+                type="button"
+              >
+                <Database className="h-3.5 w-3.5" />
+                Discover
+              </button>
+              <button
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-rose/20 bg-rose/10 px-3 text-xs font-semibold text-rose transition hover:bg-rose/20"
+                onClick={() => onEdit(connection)}
+                type="button"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </button>
+              <button
+                className="inline-flex h-8 items-center gap-2 rounded-md border border-line bg-white px-3 text-xs font-semibold text-muted transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={isArchiving}
+                onClick={() => onArchive(connection.id)}
+                type="button"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                {isArchiving ? "Archiving" : "Archive"}
+              </button>
+            </>
+          )}
         </div>
       </td>
     </tr>
@@ -1298,7 +1508,7 @@ function ExternalImportWorkspace({
                       datasetName: value,
                     })
                   }
-                  />
+                />
                 <TextInput
                   id="external-sql-preview-limit"
                   label="Preview rows"
@@ -2062,7 +2272,9 @@ function qualifiedExternalImportName(item: ExternalImportHistoryItem) {
   if (!item.table_name) {
     return "-";
   }
-  return item.schema_name ? `${item.schema_name}.${item.table_name}` : item.table_name;
+  return item.schema_name
+    ? `${item.schema_name}.${item.table_name}`
+    : item.table_name;
 }
 
 function formatCell(value: unknown) {

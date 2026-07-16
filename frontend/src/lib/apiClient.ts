@@ -22,6 +22,7 @@ export interface ApiClient {
     params?: Record<string, string | number | boolean | null | undefined>,
   ): Promise<TResponse>;
   post<TResponse>(path: string, body?: unknown): Promise<TResponse>;
+  patch<TResponse>(path: string, body?: unknown): Promise<TResponse>;
   postForm<TResponse>(path: string, body: FormData): Promise<TResponse>;
 }
 
@@ -85,6 +86,19 @@ export function createApiClient({
           "Content-Type": "application/json",
         },
         method: "POST",
+      });
+
+      return readJsonResponse<TResponse>(response);
+    },
+
+    async patch<TResponse>(path: string, body?: unknown): Promise<TResponse> {
+      const response = await fetcher(joinUrl(baseUrl, path), {
+        body: body === undefined ? undefined : JSON.stringify(body),
+        headers: {
+          ...jsonHeaders,
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
       });
 
       return readJsonResponse<TResponse>(response);
