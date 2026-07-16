@@ -1,3 +1,4 @@
+from collections.abc import Iterable, Iterator
 from datetime import date, datetime
 
 from sqlalchemy import (
@@ -20,6 +21,7 @@ from app.imports.schemas import ImportFieldPreview
 
 SYSTEM_ROW_ID = "_das_row_id"
 POSTGRES_IDENTIFIER_LIMIT = 63
+MATERIALIZATION_BATCH_SIZE = 1000
 
 
 class DatasetMaterializer:
@@ -31,7 +33,7 @@ class DatasetMaterializer:
         *,
         table_name: str,
         fields: list[ImportFieldPreview],
-        rows: list[dict[str, object | None]],
+        rows: Iterable[dict[str, object | None]],
     ) -> None:
         connection = self.session.connection()
         if inspect(connection).has_table(table_name):
@@ -44,10 +46,10 @@ class DatasetMaterializer:
         table = self._build_table(table_name=table_name, fields=fields)
         table.create(bind=connection, checkfirst=False)
 
-        if rows:
+        for batch in iter_batches(rows, MATERIALIZATION_BATCH_SIZE):
             self.session.execute(
                 table.insert(),
-                [normalize_row(row=row, fields=fields) for row in rows],
+                [normalize_row(row=row, fields=fields) for row in batch],
             )
 
     def _build_table(self, *, table_name: str, fields: list[ImportFieldPreview]) -> Table:
@@ -149,3 +151,21 @@ def normalize_value(value: object | None, field_type: str) -> object | None:
             return value
         return datetime.fromisoformat(str(value))
     return value
+
+
+def iter_batches(
+    rows: Iterable[dict[str, object | None]],
+    batch_size: int,
+) -> Iterator[list[dict[str, object | None]]]:
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+
+    batch: list[dict[str, object | None]] = []
+    for row in rows:
+        batch.append(row)
+        if len(batch) == batch_size:
+            yield batch
+            batch = []
+
+    if batch:
+        yield batch

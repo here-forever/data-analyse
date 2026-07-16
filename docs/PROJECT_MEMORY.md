@@ -108,6 +108,12 @@ Use the combined approach:
 - Use temporary preview structures before formal dataset creation.
 - Formal datasets should be real database tables.
 
+Materialization reliability rule:
+
+- Re-read retained local sources through iterators during formal dataset creation instead of keeping a second full source-row list in memory.
+- Write physical dataset and data-view rows in bounded batches so file and external-source payloads do not become one unbounded database operation.
+- Keep preview inference behavior separate from final materialization; preview may remain sample-oriented while formal writes stay stream-friendly.
+
 The selected model is:
 
 ```text

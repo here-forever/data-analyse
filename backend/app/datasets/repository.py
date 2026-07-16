@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,7 +21,7 @@ class DatasetRepository:
         fields: list[DatasetFieldModel],
         table_map: DatasetTableMapModel,
         materialized_fields: list[ImportFieldPreview] | None = None,
-        materialized_rows: list[dict[str, object | None]] | None = None,
+        materialized_rows: Iterable[dict[str, object | None]] | None = None,
     ) -> DatasetModel:
         try:
             self.session.add(dataset)

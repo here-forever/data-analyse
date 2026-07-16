@@ -81,6 +81,8 @@ The project now also has a demo-ready MVP seed path for `prj_demo`, so the curre
 - External imports support edited field names, types, and nullability before materialization.
 - External import history/detail APIs backed by task records and retry metadata.
 - External database imports are connected to task center, operation logs, basic lineage, dataset preview, and dataset quality profiling.
+- Formal dataset materialization now re-reads retained CSV/Excel sources as a row iterator instead of rebuilding a full source-row list.
+- Physical dataset and data-view writes share bounded 1,000-row insert batches, so iterable sources do not create one unbounded database payload.
 - Basic operation log and lineage records for implemented workflow actions.
 - Persisted dataset fields and physical table name mapping.
 - Demo seed script that creates/reuses a fixed `prj_demo` project, imports example CSV data, creates a cleaned dataset, saves a SQL data view, saves charts, saves a dashboard, and keeps task/lineage traceability.
@@ -172,6 +174,7 @@ Initial core tables have been modeled and migrated:
 - Parsed upload history records can restore their saved preview metadata without re-uploading the source file.
 - Data Sources now acts as the main local file intake overview and links into import previews, task traces, and formal datasets.
 - Formal dataset creation creates and populates a physical table.
+- Upload preview parsing still keeps rows in memory for field inference; only the later formal materialization pass is streaming in this milestone.
 - Dataset names are unique within a project to avoid accidental overwrite-like workflows.
 - Dataset quality profiling is computed on demand from materialized rows and is not yet cached or task-backed.
 - Operation logs and lineage records exist for the implemented workflow actions, but the lineage graph UI is not implemented yet.
@@ -179,7 +182,7 @@ Initial core tables have been modeled and migrated:
 - Retry execution is synchronous inside the API request for selected safe operations; it is not yet backed by Redis/Celery/RQ or a distributed worker.
 - File preview parse failures are recorded against staged uploaded files; user-correctable validation failures remain non-retryable, while unexpected parse failures can keep retry metadata.
 - Authentication is still development-oriented and not production JWT/auth hardening.
-- External database imports currently preview and materialize bounded snapshots through row limits; scheduled sync, incremental sync, and streaming/large-table import are not implemented yet.
+- External database imports currently preview and materialize bounded snapshots through row limits. Their final PostgreSQL writes use the shared batch materializer, but source-side cursor streaming and scheduled sync are not implemented yet.
 - External table/SQL import retry is synchronous inside the API request and replays the read/import operation, but it is not yet backed by a distributed worker.
 - External connection passwords use application-level encrypted storage, but production deployments still need protected key distribution, backup, and rotation procedures or a managed secret store.
 - External connection testing validates basic connectivity through the configured adapter and product-level read-only policy, but it does not yet prove the external database user lacks write privileges.
@@ -202,10 +205,10 @@ Future work must preserve these boundaries:
 
 ## Recommended Next Build Step
 
-The next implementation step should make larger imports reliable without jumping directly to a distributed platform:
+The next implementation step should move the now-bounded import path behind the existing task boundary without jumping directly to a distributed platform:
 
-1. Add chunked reads and batched PostgreSQL writes for larger file and external-database imports.
-2. Move long-running imports behind the existing task boundary with progress updates and cancellation-safe failure records.
+1. Move long-running imports behind the existing task boundary with progress updates and cancellation-safe failure records.
+2. Add source-side cursor streaming for external table and SQL imports while retaining bounded preview limits.
 3. Introduce a lightweight worker adapter that can later switch to Redis/Celery or RQ before scheduled sync is added.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from app.audit.service import AuditService
@@ -560,10 +561,9 @@ class DatasetService:
         *,
         preview_id: str,
         fields: list[ImportFieldPreview],
-    ) -> list[dict[str, object | None]]:
-        parsed_file = self.imports.parse_preview_source(preview_id)
-        source_fields_by_order = {field.order: field for field in parsed_file.fields}
-        materialized_rows: list[dict[str, object | None]] = []
+    ) -> Iterator[dict[str, object | None]]:
+        preview = self.imports.require_preview(preview_id)
+        source_fields_by_order = {field.order: field for field in preview.fields}
 
         for target_field in fields:
             if target_field.order not in source_fields_by_order:
@@ -573,7 +573,7 @@ class DatasetService:
                     status_code=400,
                 )
 
-        for row in parsed_file.rows:
+        for row in self.imports.iter_preview_source_rows(preview_id):
             materialized_row: dict[str, object | None] = {}
             for target_field in fields:
                 source_field = source_fields_by_order[target_field.order]
@@ -581,9 +581,7 @@ class DatasetService:
                     row.get(source_field.name),
                     target_field.inferred_type,
                 )
-            materialized_rows.append(materialized_row)
-
-        return materialized_rows
+            yield materialized_row
 
     def _record_dataset_audit(self, dataset: Dataset) -> None:
         if self.audit is None:

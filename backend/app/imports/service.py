@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -6,7 +7,11 @@ from app.audit.service import AuditService
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.ids import new_id
-from app.imports.parser import ParsedTabularFile, parse_tabular_file
+from app.imports.parser import (
+    ParsedTabularFile,
+    iter_typed_tabular_rows,
+    parse_tabular_file,
+)
 from app.imports.repository import ImportRepository
 from app.imports.schemas import FilePreviewResponse, ImportFieldPreview, UploadedFileResponse
 from app.imports.storage import LocalFileStorage
@@ -323,6 +328,47 @@ class ImportService:
             )
 
         return parse_tabular_file(uploaded_file.file_name, storage_path.read_bytes())
+
+    def iter_preview_source_rows(
+        self,
+        preview_id: str,
+    ) -> Iterator[dict[str, object | None]]:
+        preview = self.get_preview(preview_id)
+        if preview is None:
+            raise AppError(message="Preview not found", code="preview_not_found", status_code=404)
+
+        if self.repository is None:
+            yield from preview.sample_rows
+            return
+
+        if preview.uploaded_file_id is None:
+            raise AppError(
+                message="Preview is not linked to an uploaded file",
+                code="preview_source_missing",
+                status_code=409,
+            )
+
+        uploaded_file = self.repository.get_uploaded_file(preview.uploaded_file_id)
+        if uploaded_file is None:
+            raise AppError(
+                message="Uploaded file metadata not found",
+                code="uploaded_file_not_found",
+                status_code=404,
+            )
+
+        storage_path = Path(uploaded_file.storage_path)
+        if not storage_path.exists():
+            raise AppError(
+                message="Uploaded source file not found in storage",
+                code="uploaded_source_file_missing",
+                status_code=409,
+            )
+
+        yield from iter_typed_tabular_rows(
+            uploaded_file.file_name,
+            storage_path,
+            preview.fields,
+        )
 
     def _save_uploaded_file(
         self,
