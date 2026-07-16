@@ -27,6 +27,17 @@ coverage/
 .env.*
 !.env.example
 
+# Credentials and private material
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+credentials*.json
+service-account*.json
+secrets/
+.secrets/
+
 # IDE / OS
 .vscode/
 .idea/
@@ -48,3 +59,7 @@ temp/
 # Worktrees
 .worktrees/
 worktrees/
+
+# Local agent state
+.agents/
+.codex/

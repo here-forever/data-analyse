@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: data_analysis_system
-      POSTGRES_USER: data_analysis_user
-      POSTGRES_PASSWORD: data_analysis_password
+      POSTGRES_DB: ${POSTGRES_DB:-data_analysis_system}
+      POSTGRES_USER: ${POSTGRES_USER:-data_analysis_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-data_analysis_password}
     ports:
       - "5432:5432"
     volumes:
@@ -13,7 +13,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U data_analysis_user -d data_analysis_system",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
         ]
       interval: 10s
       timeout: 5s
@@ -38,8 +38,9 @@ services:
     environment:
       APP_ENV: development
       APP_DEBUG: "true"
+      APP_SECRET_KEY: ${APP_SECRET_KEY:-local-development-only-secret}
       BACKEND_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
-      DATABASE_URL: postgresql+psycopg://data_analysis_user:data_analysis_password@postgres:5432/data_analysis_system
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-data_analysis_user}:${POSTGRES_PASSWORD:-data_analysis_password}@postgres:5432/${POSTGRES_DB:-data_analysis_system}
       REDIS_URL: redis://redis:6379/0
       LOCAL_STORAGE_ROOT: /app/storage
       UPLOAD_STORAGE_ROOT: /app/storage/uploads
@@ -73,7 +74,7 @@ services:
       dockerfile: docker/frontend.Dockerfile
     environment:
       VITE_API_BASE_URL: http://127.0.0.1:8000/api
-      VITE_DEV_ACCESS_TOKEN: local-dev-token-usr_admin
+      VITE_DEV_ACCESS_TOKEN: ${VITE_DEV_ACCESS_TOKEN:-local-dev-token-usr_admin}
     ports:
       - "5173:5173"
     volumes:

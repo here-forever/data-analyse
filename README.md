@@ -1,68 +1,45 @@
 # Data Analysis System
 
-A professional, usable, and extensible data analysis workspace that will gradually evolve into an enterprise-grade data platform.
+A professional, usable, and extensible data analysis workspace built for individuals and small teams. The project starts as a modular monolith and follows a clear path toward a larger data platform without introducing enterprise complexity too early.
 
-## Current Status
+## Current State
 
-The project has moved beyond planning into a demo-ready MVP foundation. The current implementation can run locally with Docker Compose and demonstrates the main data workflow with seeded example data.
-
-Implemented documentation milestones:
-
-- `docs/PROJECT_MEMORY.md` - project memory and long-term constraints.
-- `docs/MVP_ROADMAP.md` - MVP module, page, database, and milestone roadmap.
-- `docs/DEVELOPMENT_SETUP.md` - local setup notes.
-- `docs/IMPLEMENTATION_STATUS.md` - current implemented capabilities and limitations.
-- `docs/DEMO_GUIDE.md` - demo startup and walkthrough.
-
-## Product Direction
-
-The core workflow is:
+The repository contains a demo-ready MVP foundation with a working end-to-end data path:
 
 ```text
-data source -> dataset -> cleaning recipe or SQL -> data view -> chart -> dashboard/report
+CSV / Excel / external PostgreSQL or MySQL
+  -> retained source and preview
+  -> PostgreSQL-backed dataset
+  -> visual cleaning or read-only SQL
+  -> reusable data view
+  -> ECharts chart
+  -> dashboard/report
+  -> task, audit, and lineage records
 ```
 
-The first stage focuses on a lightweight project-collaboration data analysis workspace, not a full enterprise SaaS platform.
+Implemented product surfaces include:
 
-## Planned Tech Stack
+- Local CSV/Excel import with durable source retention, preview recovery, editable fields, and import history.
+- Formal datasets materialized as physical PostgreSQL tables with pagination and quality profiling.
+- External PostgreSQL/MySQL read-only connections, discovery, preview, table/SQL import, history, and retry.
+- Saveable cleaning recipes executed into derived datasets.
+- Project-scoped read-only SQL with reusable Data View materialization.
+- ECharts chart configuration and dashboard/report layout foundations.
+- Task Center with status, errors, related-resource links, and synchronous retry for supported operations.
+- Basic project collaboration, resource permissions, operation logs, and data lineage.
 
-Backend:
+Detailed status and known limitations are tracked in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).
 
-- Python
-- FastAPI
-- PostgreSQL
-- SQLAlchemy
-- Alembic
-- Pydantic
-- Pandas / Polars
+## Technology
 
-Frontend:
-
-- React
-- TypeScript
-- Vite
-- TanStack Query
-- Zustand
-- ECharts
-- Monaco Editor
-- Tailwind CSS
-
-Deployment direction:
-
-- Local development first.
-- Docker Compose for PostgreSQL, Redis, backend, and frontend.
-
-## MVP Scope
-
-See `docs/MVP_ROADMAP.md` for the full MVP roadmap.
-
-## Development Notes
-
-See `docs/DEVELOPMENT_SETUP.md` for local setup notes.
+- Backend: Python 3.13, FastAPI, SQLAlchemy, Alembic, Pydantic, PostgreSQL.
+- Data processing: current tabular parsing foundation with Pandas/Polars reserved for broader processing milestones.
+- Frontend: React, TypeScript, Vite, TanStack Query, Zustand, Tailwind CSS, ECharts.
+- Development deployment: Docker Compose with PostgreSQL, Redis, backend, and frontend services.
 
 ## Run The Demo
 
-From the repository root:
+Prerequisites: Docker Desktop with Docker Compose.
 
 ```powershell
 docker compose up -d --build
@@ -70,84 +47,45 @@ docker compose exec backend python -m alembic upgrade head
 docker compose exec backend python /demo/scripts/seed_demo.py
 ```
 
-Open:
+Open `http://127.0.0.1:5173` and use the seeded project `prj_demo`.
 
-```text
-http://127.0.0.1:5173
-```
+The seed is idempotent and creates synthetic demo resources for the full workflow. See [`docs/DEMO_GUIDE.md`](docs/DEMO_GUIDE.md) for direct page links and the expected walkthrough.
 
-The seeded demo project is `prj_demo`. See `docs/DEMO_GUIDE.md` for the walkthrough.
+## Local Development
 
-## Git Workflow
+Copy `.env.example` to `.env` and replace every placeholder before using local services outside the default Docker demo environment.
 
-Use focused commits for meaningful milestones. Keep documentation updated when architecture decisions change.
+Setup, migration, test, and troubleshooting commands are documented in [`docs/DEVELOPMENT_SETUP.md`](docs/DEVELOPMENT_SETUP.md). Backend- and frontend-specific notes are also available in [`backend/README.md`](backend/README.md) and [`frontend/README.md`](frontend/README.md).
 
-## Backend Skeleton
-
-The backend currently provides:
-
-- FastAPI app factory.
-- `/api/health` endpoint.
-- Pydantic settings.
-- Standard application error response.
-- SQLAlchemy base, engine, and session factory.
-- Alembic environment.
-- Pytest test suite.
-- Auth, projects, permissions, import preview, dataset materialization, cleaning, SQL workspace, data views, charts, dashboards, tasks, audit/lineage, and external database intake MVP modules.
-
-Backend commands are documented in `backend/README.md`.
-
-## Frontend Skeleton
-
-The frontend currently provides:
-
-- Vite + React + TypeScript setup.
-- React Router app shell.
-- TanStack Query provider.
-- Zustand workspace state store.
-- Typed API client helper.
-- Tailwind CSS design tokens.
-- Vitest and Testing Library tests.
-- Implemented pages for Data Sources, Import, Datasets, Cleaning, SQL Workspace, Charts, Dashboards, and Tasks.
-
-Frontend commands are documented in `frontend/README.md`.
-
-## Auth, Projects, and Permissions API Foundation
-
-The backend now includes a local-runnable API foundation for:
-
-- Login and current user.
-- Project creation and project listing.
-- Project member roles.
-- Basic resource-level permission records.
-
-This stage uses an in-memory development service so implementation can continue before Docker/PostgreSQL are available. The API boundary is covered by tests and will later be connected to SQLAlchemy models and migrations.
-
-## File Import Preview Foundation
-
-The backend now includes local-runnable endpoints for:
-
-- CSV upload preview.
-- Excel upload preview.
-- Field type inference.
-- Sample row preview.
-- Dataset metadata creation from a confirmed preview.
-
-This validates the first half of the import flow before formal PostgreSQL physical dataset table creation is added.
-
-## Docker Compose Development
-
-After Docker Desktop and WSL2 are available, the project can start its development stack with:
+## Validation
 
 ```powershell
-docker compose up --build
+backend\.venv\Scripts\python -m ruff check backend
+backend\.venv\Scripts\python -m pytest backend\tests -q
+cd frontend
+npm.cmd run lint
+npm.cmd test -- --run
+npm.cmd run build
 ```
 
-Local service URLs:
+GitHub Actions runs the equivalent backend and frontend checks for pushes and pull requests.
 
-- Frontend: `http://127.0.0.1:5173`
-- Backend health: `http://127.0.0.1:8000/api/health`
-- PostgreSQL: `127.0.0.1:5432`
-- Redis: `127.0.0.1:6379`
+## Security And Privacy
 
-Docker details are documented in `docker/README.md`.
+The tracked demo data is synthetic. Runtime uploads, local storage, `.env` files, credentials, database files, and private key formats are ignored by Git.
+
+The current authentication and external-credential storage remain development-oriented. Do not expose this MVP directly to the public internet. Review [`SECURITY.md`](SECURITY.md) before deployment or connector testing with non-demo systems.
+
+## Project Direction
+
+The main product and engineering constraints live in [`docs/PROJECT_MEMORY.md`](docs/PROJECT_MEMORY.md), with the staged roadmap in [`docs/MVP_ROADMAP.md`](docs/MVP_ROADMAP.md).
+
+The immediate goal remains a complete personal/small-team data development and analysis system. Enterprise features such as distributed workers, scheduled sync, API sources, field/row permissions, full lineage visualization, multi-tenancy, and Kubernetes remain later-stage work.
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Keep contributions scoped, preserve traceability, and use synthetic or anonymized data in tests and examples.
+
+## License
+
+No open-source license has been selected yet. The repository is public for evaluation, but reuse and redistribution rights should be treated as reserved until a license is added.
