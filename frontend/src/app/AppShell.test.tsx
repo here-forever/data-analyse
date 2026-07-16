@@ -10,6 +10,7 @@ describe("AppShell", () => {
   beforeEach(() => {
     useWorkspaceStore.setState({
       activeProjectId: null,
+      advancedView: false,
       sidebarCollapsed: false,
     });
   });
@@ -28,13 +29,25 @@ describe("AppShell", () => {
       screen.getByRole("link", { name: "Data Sources" }),
     ).toBeInTheDocument();
     expect(
+      screen.queryByRole("link", { name: "SQL Workspace" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Turn curious data into clear stories."),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Bring in data").length).toBeGreaterThan(0);
+    expect(screen.getByText("Tell the story")).toBeInTheDocument();
+  });
+
+  test("reveals professional tools only when requested", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AppShell />);
+
+    await user.click(screen.getByRole("switch", { name: "Pro view" }));
+
+    expect(
       screen.getByRole("link", { name: "SQL Workspace" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText("Your data workspace is ready."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Bring in data")).toBeInTheDocument();
-    expect(screen.getByText("Tell the story")).toBeInTheDocument();
+    expect(useWorkspaceStore.getState().advancedView).toBe(true);
   });
 
   test("groups workflow creation actions in a start menu", async () => {

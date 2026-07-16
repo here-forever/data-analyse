@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { renderWithProviders } from "../../test/test-utils";
+import { useWorkspaceStore } from "../workspace/workspaceStore";
 import { DataSourcesPage } from "./DataSourcesPage";
 
 const fetchMock = vi.fn();
@@ -11,6 +12,7 @@ describe("DataSourcesPage", () => {
   beforeEach(() => {
     fetchMock.mockReset();
     global.fetch = fetchMock;
+    useWorkspaceStore.setState({ advancedView: false });
   });
 
   test("shows local file intake, upload history, and linked datasets", async () => {
@@ -123,6 +125,12 @@ describe("DataSourcesPage", () => {
       "/import?project_id=prj_demo&preview_id=preview_1",
     );
     expect(screen.getAllByText("sales.csv").length).toBeGreaterThan(0);
+    expect(screen.queryByText("External database")).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(
+        screen.getByRole("button", { name: "Toggle advanced data access" }),
+      );
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
     expect(
       screen.getByText("Only CSV and Excel files are supported"),
@@ -267,6 +275,9 @@ describe("DataSourcesPage", () => {
 
     renderWithProviders(<DataSourcesPage />);
 
+    await user.click(
+      screen.getByRole("button", { name: "Toggle advanced data access" }),
+    );
     await screen.findByText("Warehouse readonly");
     await user.click(screen.getByRole("button", { name: "MySQL" }));
     await user.type(
@@ -420,6 +431,9 @@ describe("DataSourcesPage", () => {
 
     renderWithProviders(<DataSourcesPage />);
 
+    await user.click(
+      screen.getByRole("button", { name: "Toggle advanced data access" }),
+    );
     await screen.findByText("Warehouse readonly");
     await user.click(screen.getByRole("button", { name: "Edit" }));
     const hostInput = screen.getByLabelText("Host");

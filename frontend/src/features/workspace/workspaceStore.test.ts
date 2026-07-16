@@ -4,7 +4,11 @@ import { useWorkspaceStore } from "./workspaceStore";
 
 describe("workspaceStore", () => {
   beforeEach(() => {
-    useWorkspaceStore.setState({ activeProjectId: null, sidebarCollapsed: false });
+    useWorkspaceStore.setState({
+      activeProjectId: null,
+      advancedView: false,
+      sidebarCollapsed: false,
+    });
   });
 
   test("stores active project id", () => {
@@ -17,5 +21,11 @@ describe("workspaceStore", () => {
     useWorkspaceStore.getState().toggleSidebar();
 
     expect(useWorkspaceStore.getState().sidebarCollapsed).toBe(true);
+  });
+
+  test("toggles advanced workspace visibility", () => {
+    useWorkspaceStore.getState().toggleAdvancedView();
+
+    expect(useWorkspaceStore.getState().advancedView).toBe(true);
   });
 });

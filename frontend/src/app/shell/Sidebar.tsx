@@ -1,12 +1,14 @@
 import {
   BarChart3,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleDot,
   Sparkles,
+  WandSparkles,
   X,
 } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 
 import {
   navigationSections,
@@ -16,26 +18,31 @@ import {
 import { DEFAULT_PROJECT_ID, projectPath } from "./shellLinks";
 
 interface SidebarProps {
+  advancedView: boolean;
   collapsed?: boolean;
   mobile?: boolean;
   projectId: string;
   onClose?: () => void;
   onNavigate?: () => void;
+  onToggleAdvancedView: () => void;
   onToggleCollapsed?: () => void;
 }
 
 export function Sidebar({
+  advancedView,
   collapsed = false,
   mobile = false,
   projectId,
   onClose,
   onNavigate,
+  onToggleAdvancedView,
   onToggleCollapsed,
 }: SidebarProps) {
+  const location = useLocation();
   return (
     <aside
       className={[
-        "flex h-full flex-col border-r border-line/80 bg-[#fcfbff] text-ink",
+        "flex h-full flex-col border-r border-lilac/15 bg-[#f8f4ff] text-ink",
         mobile ? "w-[min(320px,calc(100vw-32px))] shadow-menu" : "w-full",
       ].join(" ")}
     >
@@ -88,26 +95,61 @@ export function Sidebar({
             />
           </div>
 
-          {navigationSections.map((section) => (
-            <div key={section.label}>
-              {!collapsed ? (
-                <NavigationLabel>{section.label}</NavigationLabel>
-              ) : (
-                <div className="mx-auto mb-2 h-px w-8 bg-line" />
-              )}
-              <div className="space-y-1">
-                {section.items.map((item) => (
-                  <SidebarLink
-                    collapsed={collapsed}
-                    item={item}
-                    key={item.path}
-                    onNavigate={onNavigate}
-                    projectId={projectId}
-                  />
-                ))}
+          {navigationSections.map((section) => {
+            const advancedRouteActive = section.items.some(
+              (item) => item.path === location.pathname,
+            );
+            const sectionVisible =
+              !section.advanced || advancedView || advancedRouteActive;
+
+            return (
+              <div key={section.label}>
+                {section.advanced ? (
+                  <button
+                    aria-expanded={sectionVisible}
+                    className={[
+                      "mb-2 flex w-full items-center rounded-md border text-xs font-bold transition",
+                      collapsed
+                        ? "h-10 justify-center px-2"
+                        : "h-9 justify-between px-3",
+                      sectionVisible
+                        ? "border-lilac/20 bg-lilac/10 text-lilac"
+                        : "border-line/70 bg-white text-muted hover:border-lilac/30 hover:text-lilac",
+                    ].join(" ")}
+                    onClick={onToggleAdvancedView}
+                    type="button"
+                  >
+                    <span className="flex items-center gap-2">
+                      <WandSparkles className="h-3.5 w-3.5" />
+                      {!collapsed ? "Advanced tools" : null}
+                    </span>
+                    {!collapsed ? (
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 transition ${sectionVisible ? "rotate-180" : ""}`}
+                      />
+                    ) : null}
+                  </button>
+                ) : !collapsed ? (
+                  <NavigationLabel>{section.label}</NavigationLabel>
+                ) : (
+                  <div className="mx-auto mb-2 h-px w-8 bg-line" />
+                )}
+                {sectionVisible ? (
+                  <div className="space-y-1">
+                    {section.items.map((item) => (
+                      <SidebarLink
+                        collapsed={collapsed}
+                        item={item}
+                        key={item.path}
+                        onNavigate={onNavigate}
+                        projectId={projectId}
+                      />
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
       </div>
 

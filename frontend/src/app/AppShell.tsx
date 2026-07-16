@@ -13,8 +13,14 @@ export function AppShell() {
   const location = useLocation();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const { activeProjectId, setActiveProject, sidebarCollapsed, toggleSidebar } =
-    useWorkspaceStore();
+  const {
+    activeProjectId,
+    advancedView,
+    setActiveProject,
+    sidebarCollapsed,
+    toggleAdvancedView,
+    toggleSidebar,
+  } = useWorkspaceStore();
   const currentRoute =
     routePlaceholders[location.pathname] ?? routePlaceholders["/"];
   const currentMeta = routeMeta[location.pathname] ?? routeMeta["/"];
@@ -59,7 +65,9 @@ export function AppShell() {
         ].join(" ")}
       >
         <Sidebar
+          advancedView={advancedView}
           collapsed={sidebarCollapsed}
+          onToggleAdvancedView={toggleAdvancedView}
           onToggleCollapsed={toggleSidebar}
           projectId={projectId}
         />
@@ -75,9 +83,11 @@ export function AppShell() {
           />
           <div className="absolute inset-y-0 left-0">
             <Sidebar
+              advancedView={advancedView}
               mobile
               onClose={() => setMobileNavigationOpen(false)}
               onNavigate={() => setMobileNavigationOpen(false)}
+              onToggleAdvancedView={toggleAdvancedView}
               projectId={projectId}
             />
           </div>
@@ -91,8 +101,10 @@ export function AppShell() {
         ].join(" ")}
       >
         <TopBar
+          advancedView={advancedView}
           onOpenMobileNavigation={() => setMobileNavigationOpen(true)}
           onOpenSearch={() => setCommandPaletteOpen(true)}
+          onToggleAdvancedView={toggleAdvancedView}
           pageDescription={currentMeta.description}
           pageSection={currentMeta.section}
           pageTitle={currentMeta.title}

@@ -7,7 +7,7 @@ export default {
       colors: {
         ink: "#182238",
         muted: "#68758b",
-        canvas: "#f8f8fc",
+        canvas: "#f3f1fa",
         panel: "#ffffff",
         line: "#dfe4ee",
         brand: "#2563eb",

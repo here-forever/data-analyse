@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Archive,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Database,
   FileSpreadsheet,
@@ -14,6 +15,7 @@ import {
   Search,
   Server,
   SquareCode,
+  WandSparkles,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -24,6 +26,7 @@ import {
   type UploadRecord,
   type UploadStatus,
 } from "../imports/api";
+import { useWorkspaceStore } from "../workspace/workspaceStore";
 import {
   archiveExternalDatabaseConnection,
   createExternalDatabaseConnection,
@@ -115,6 +118,10 @@ const FIELD_TYPES: FieldType[] = [
 ];
 
 export function DataSourcesPage() {
+  const advancedView = useWorkspaceStore((state) => state.advancedView);
+  const toggleAdvancedView = useWorkspaceStore(
+    (state) => state.toggleAdvancedView,
+  );
   const [projectId, setProjectId] = useState(DEFAULT_PROJECT_ID);
   const [submittedProjectId, setSubmittedProjectId] =
     useState(DEFAULT_PROJECT_ID);
@@ -191,62 +198,86 @@ export function DataSourcesPage() {
         </form>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-3">
         <Metric
-          label="Uploads"
+          label="Source files"
           value={summary.totalUploads.toLocaleString()}
           tone="brand"
         />
         <Metric
-          label="Parsed"
-          value={summary.parsedUploads.toLocaleString()}
+          label="Ready datasets"
+          value={summary.datasetCount.toLocaleString()}
           tone="emerald"
         />
         <Metric
-          label="Failed"
+          label="Needs attention"
           value={summary.failedUploads.toLocaleString()}
           tone="amber"
         />
-        <Metric
-          label="Datasets"
-          value={summary.datasetCount.toLocaleString()}
-          tone="cyan"
-        />
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <SourceTypePanel projectId={submittedProjectId} />
+      <LocalFilePanel projectId={submittedProjectId} uploads={uploads} />
 
-        <div className="space-y-5">
-          <LocalFilePanel projectId={submittedProjectId} uploads={uploads} />
-          <ExternalDatabasePanel projectId={submittedProjectId} />
-          <UploadRecordPanel
-            error={uploadsQuery.error}
-            isLoading={uploadsQuery.isLoading || uploadsQuery.isFetching}
-            uploads={uploads}
-          />
-          <DatasetBridgePanel
-            datasets={datasets}
-            error={datasetsQuery.error}
-            isLoading={datasetsQuery.isLoading || datasetsQuery.isFetching}
-          />
-        </div>
+      <div className="overflow-hidden rounded-md border border-lilac/20 bg-[#fff4fa]">
+        <button
+          aria-label="Toggle advanced data access"
+          aria-expanded={advancedView}
+          className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-rose/10"
+          onClick={toggleAdvancedView}
+          type="button"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-lilac/15 text-lilac">
+              <WandSparkles className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-bold text-ink">
+                Advanced data access
+              </span>
+              <span className="mt-1 block truncate text-xs text-muted">
+                External databases, full upload history, and dataset bridge
+                details
+              </span>
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-xs font-bold text-lilac">
+            {advancedView ? "Collapse" : "Expand"}
+            <ChevronDown
+              className={`h-4 w-4 transition ${advancedView ? "rotate-180" : ""}`}
+            />
+          </span>
+        </button>
+
+        {advancedView ? (
+          <div className="border-t border-lilac/15 p-3 sm:p-4">
+            <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+              <SourceTypePanel />
+
+              <div className="space-y-5">
+                <ExternalDatabasePanel projectId={submittedProjectId} />
+                <UploadRecordPanel
+                  error={uploadsQuery.error}
+                  isLoading={uploadsQuery.isLoading || uploadsQuery.isFetching}
+                  uploads={uploads}
+                />
+                <DatasetBridgePanel
+                  datasets={datasets}
+                  error={datasetsQuery.error}
+                  isLoading={
+                    datasetsQuery.isLoading || datasetsQuery.isFetching
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );
 }
 
-function SourceTypePanel({ projectId }: { projectId: string }) {
+function SourceTypePanel() {
   const sourceTypes = [
-    {
-      title: "Local files",
-      description:
-        "CSV and Excel uploads with retained originals and preview recovery.",
-      icon: FileSpreadsheet,
-      tone: "brand" as const,
-      state: "Available",
-      href: `/import?project_id=${encodeURIComponent(projectId)}`,
-    },
     {
       title: "External database",
       description:

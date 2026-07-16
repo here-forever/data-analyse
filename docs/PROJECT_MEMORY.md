@@ -460,6 +460,9 @@ Frontend style:
 - Avoid the reference's overly plain white/gray feeling. The product should use a softer, more artistic data-workbench style with gentle layered backgrounds, tasteful multi-color accents, warm/cool contrast, and color-coded analytical surfaces.
 - Translate the Workshop Toolkit mood into airy sky blue, lilac, soft rose, mint, and warm neutral canvas layers, with clear white or lightly tinted work surfaces above them.
 - Use friendly, confident page titles and occasional small sticker-like accents for workspace home, onboarding, empty states, and completion feedback. Keep those accents original to this project and away from dense data operations.
+- Use an original dreamy-cartoon visual mood for the shell, workspace home, onboarding, and empty states through pastel color zones, playful icon compositions, and light illustrative details. The result should remain polished and credible for data work.
+- Treat progressive disclosure as a product-level interaction constraint: ordinary users start in a guided view with only the main actions, while a clear Pro view and contextual disclosure panels reveal SQL, cleaning, external connectors, history, trace, and configuration details.
+- Keep advanced capabilities directly reachable. Opening an advanced route should reveal its navigation context, and hiding advanced presentation must never remove the underlying workflow.
 - Preserve compact professional density in tables, SQL editors, cleaning forms, task lists, and chart controls. The surrounding shell can feel playful, but the work surface must remain stable, legible, and efficient.
 - Do not directly copy community-file artwork. Any future third-party visual asset must have a compatible license, documented source, and tracked attribution.
 - The interface should feel friendly and creative while still being professional: soft canvas tones, restrained shadows, subtle borders, calm typography, and polished spacing.

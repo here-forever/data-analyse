@@ -1,8 +1,10 @@
 import {
-  ArrowUpRight,
+  ArrowRight,
   BarChart3,
   BrushCleaning,
   CheckCircle2,
+  ChevronDown,
+  CloudSun,
   Database,
   FileUp,
   LayoutDashboard,
@@ -10,344 +12,331 @@ import {
   ScrollText,
   Sparkles,
   SquareTerminal,
-  Workflow,
+  Table2,
+  WandSparkles,
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 
+import { useWorkspaceStore } from "../features/workspace/workspaceStore";
 import { DEFAULT_PROJECT_ID, projectPath } from "./shell/shellLinks";
 
-const workflowItems = [
+const primaryActions = [
   {
-    title: "Data Sources",
-    group: "Connect",
-    description: "Files, upload history, and external database connections.",
-    path: "/data-sources",
-    icon: Database,
-    tone: "mint" as const,
-  },
-  {
-    title: "Import",
-    group: "Connect",
-    description: "Preview CSV or Excel fields before materialization.",
+    title: "Bring in data",
+    description:
+      "Upload CSV or Excel and preview fields before creating a dataset.",
+    action: "Start import",
     path: "/import",
     icon: FileUp,
-    tone: "sky" as const,
+    className: "border-sky/25 bg-sky/15 text-sky",
   },
   {
-    title: "Datasets",
-    group: "Store",
-    description: "Inspect formal tables, schema, rows, and quality.",
+    title: "Explore datasets",
+    description:
+      "Review rows, schema, and quality for materialized project data.",
+    action: "Open datasets",
     path: "/datasets",
     icon: ListChecks,
-    tone: "brand" as const,
+    className: "border-mint/25 bg-mint/15 text-mint",
   },
   {
-    title: "Cleaning",
-    group: "Prepare",
-    description: "Build and execute reusable visual cleaning recipes.",
-    path: "/cleaning",
-    icon: BrushCleaning,
-    tone: "rose" as const,
-  },
-  {
-    title: "SQL Workspace",
-    group: "Explore",
-    description: "Query project datasets and save reusable data views.",
-    path: "/sql",
-    icon: SquareTerminal,
-    tone: "lilac" as const,
-  },
-  {
-    title: "Charts",
-    group: "Visualize",
-    description: "Map dimensions and metrics into real ECharts views.",
+    title: "Create a visual",
+    description: "Turn a reusable data view into a clear chart for reporting.",
+    action: "Build chart",
     path: "/charts",
     icon: BarChart3,
-    tone: "sky" as const,
+    className: "border-rose/25 bg-rose/15 text-rose",
+  },
+];
+
+const advancedActions = [
+  {
+    title: "Database sources",
+    description: "Connect PostgreSQL or MySQL and import read-only snapshots.",
+    path: "/data-sources",
+    icon: Database,
+    tone: "bg-mint/15 text-mint",
   },
   {
-    title: "Dashboards",
-    group: "Present",
-    description: "Arrange charts into dashboard and report layouts.",
+    title: "Cleaning recipes",
+    description: "Compose reusable visual transformations.",
+    path: "/cleaning",
+    icon: BrushCleaning,
+    tone: "bg-rose/15 text-rose",
+  },
+  {
+    title: "SQL analysis",
+    description: "Query multiple project datasets safely.",
+    path: "/sql",
+    icon: SquareTerminal,
+    tone: "bg-lilac/15 text-lilac",
+  },
+  {
+    title: "Dashboard studio",
+    description: "Compose charts into report layouts.",
     path: "/dashboards",
     icon: LayoutDashboard,
-    tone: "mint" as const,
+    tone: "bg-sky/15 text-sky",
   },
   {
-    title: "Tasks",
-    group: "Trace",
-    description: "Follow task status, retries, and related resources.",
+    title: "Task trace",
+    description: "Inspect status, retries, and related resources.",
     path: "/tasks",
     icon: ScrollText,
-    tone: "amber" as const,
+    tone: "bg-amber/15 text-amber",
   },
 ];
 
 const dataFlow = [
-  { label: "Source", tone: "bg-mint text-white" },
-  { label: "Dataset", tone: "bg-brand text-white" },
-  { label: "Clean / SQL", tone: "bg-rose text-white" },
-  { label: "Data View", tone: "bg-lilac text-white" },
-  { label: "Chart", tone: "bg-sky text-white" },
-  { label: "Report", tone: "bg-amber text-white" },
+  "Source",
+  "Dataset",
+  "Clean / SQL",
+  "Data View",
+  "Chart",
+  "Report",
 ];
 
 export function WorkspaceHomePage() {
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get("project_id") ?? DEFAULT_PROJECT_ID;
+  const advancedView = useWorkspaceStore((state) => state.advancedView);
+  const toggleAdvancedView = useWorkspaceStore(
+    (state) => state.toggleAdvancedView,
+  );
   const isDemoProject = projectId === DEFAULT_PROJECT_ID;
-  const projectName = isDemoProject ? "Demo analytics" : "Project workspace";
 
   return (
-    <section className="space-y-6">
-      <div className="overflow-hidden rounded-md border border-line bg-white/85">
-        <div className="grid lg:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="px-5 py-6 sm:px-7 sm:py-8">
+    <section className="space-y-5">
+      <div className="overflow-hidden rounded-md border border-lilac/20 bg-[#eeeaff] shadow-panel">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_440px]">
+          <div className="px-5 py-7 sm:px-8 sm:py-9">
             <div className="flex items-center gap-2 text-xs font-bold text-lilac">
               <Sparkles className="h-4 w-4" />
               {isDemoProject ? "Demo workspace" : "Project workspace"}
             </div>
             <h2 className="mt-3 max-w-3xl text-3xl font-bold leading-tight text-ink sm:text-4xl">
-              Your data workspace is ready.
+              Turn curious data into clear stories.
             </h2>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
-              A professional data analysis workbench for moving from retained
-              source data to reliable datasets, reusable analysis, and clear
-              reports.
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-muted">
+              Start with a simple guided path. Reveal professional cleaning,
+              SQL, connector, and task tools only when the analysis calls for
+              them.
             </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <CapabilityChip label="Retained sources" tone="mint" />
+              <CapabilityChip label="PostgreSQL datasets" tone="brand" />
+              <CapabilityChip label="Traceable workflows" tone="rose" />
+            </div>
             <div className="mt-6 flex flex-wrap gap-2">
               <Link
                 className="inline-flex h-10 items-center gap-2 rounded-md bg-ink px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
-                to={projectPath("/datasets", projectId)}
+                to={projectPath("/import", projectId)}
               >
-                <ListChecks className="h-4 w-4" />
-                Explore datasets
+                <FileUp className="h-4 w-4" />
+                Import data
               </Link>
-              <Link
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-lilac/20 bg-lilac/10 px-4 text-sm font-semibold text-lilac transition hover:bg-lilac/20"
-                to={projectPath("/sql", projectId)}
+              <button
+                aria-checked={advancedView}
+                className="inline-flex h-10 items-center gap-2 rounded-md border border-lilac/25 bg-white/60 px-4 text-sm font-semibold text-lilac transition hover:bg-white"
+                onClick={toggleAdvancedView}
+                role="switch"
+                type="button"
               >
-                <SquareTerminal className="h-4 w-4" />
-                Open SQL workspace
-              </Link>
+                <WandSparkles className="h-4 w-4" />
+                {advancedView ? "Hide Pro tools" : "Show Pro tools"}
+              </button>
             </div>
           </div>
 
-          <div className="border-t border-line bg-lilac/10 p-5 lg:border-l lg:border-t-0">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase text-lilac">
-                  Active project
-                </p>
-                <p className="mt-1 text-lg font-bold text-ink">{projectName}</p>
-              </div>
-              <span className="rounded-full border border-mint/20 bg-white px-2.5 py-1 text-[10px] font-bold text-mint">
-                {isDemoProject ? "Demo ready" : "Active"}
-              </span>
-            </div>
-            <p className="mt-2 font-mono text-xs text-muted">{projectId}</p>
-            <div className="mt-5 space-y-2">
-              <ProjectSignal label="Source retention" />
-              <ProjectSignal label="Materialized datasets" />
-              <ProjectSignal label="Task and lineage trace" />
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t border-line bg-canvas/70 px-5 py-4 sm:px-7">
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-muted">
-            <Workflow className="h-3.5 w-3.5 text-brand" />
-            Main data flow
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 md:grid-cols-6">
-            {dataFlow.map((step, index) => (
-              <div className="relative" key={step.label}>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`grid h-7 w-7 shrink-0 place-items-center rounded-md text-[10px] font-bold ${step.tone}`}
-                  >
-                    {index + 1}
-                  </span>
-                  <span className="truncate text-[11px] font-semibold text-ink">
-                    {step.label}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <DreamDataScene projectId={projectId} />
         </div>
       </div>
 
-      <div className="grid overflow-hidden rounded-md border border-line bg-white sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Workflow modules" value="8 connected" tone="brand" />
-        <Metric label="Source paths" value="Files + databases" tone="mint" />
-        <Metric label="Analysis modes" value="Visual + SQL" tone="lilac" />
-        <Metric label="Traceability" value="Tasks + lineage" tone="rose" />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div>
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold text-lilac">Workspace modules</p>
-              <h3 className="mt-1 text-xl font-bold text-ink">
-                Continue your analysis
-              </h3>
-            </div>
-            <p className="hidden text-xs text-muted sm:block">
-              Every module stays inside the same project flow.
+      <div>
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold text-rose">
+              Choose a clear next step
             </p>
+            <h3 className="mt-1 text-xl font-bold text-ink">
+              What are you doing today?
+            </h3>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
-            {workflowItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  className="group flex min-h-40 flex-col rounded-md border border-line bg-white p-4 transition hover:-translate-y-0.5 hover:border-lilac/30 hover:shadow-panel"
-                  key={item.title}
-                  to={projectPath(item.path, projectId)}
-                >
-                  <div className="flex items-start justify-between gap-3">
+          <p className="hidden text-xs text-muted sm:block">
+            The guided view keeps the main workflow uncluttered.
+          </p>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {primaryActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                className={`group min-h-44 rounded-md border p-5 transition hover:-translate-y-0.5 hover:shadow-panel ${action.className}`}
+                key={action.title}
+                to={projectPath(action.path, projectId)}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <span className="grid h-10 w-10 place-items-center rounded-md bg-white/70">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <ArrowRight className="h-4 w-4 opacity-45 transition group-hover:translate-x-1 group-hover:opacity-100" />
+                </div>
+                <h4 className="mt-5 text-base font-bold text-ink">
+                  {action.title}
+                </h4>
+                <p className="mt-2 text-xs leading-5 text-muted">
+                  {action.description}
+                </p>
+                <p className="mt-4 text-xs font-bold">{action.action}</p>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-md border border-lilac/20 bg-[#fff4fa]">
+        <button
+          aria-expanded={advancedView}
+          className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition hover:bg-rose/10"
+          onClick={toggleAdvancedView}
+          type="button"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-lilac/15 text-lilac">
+              <WandSparkles className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-bold text-ink">
+                Professional workspace
+              </span>
+              <span className="mt-1 block truncate text-xs text-muted">
+                Database connectors, cleaning, SQL, reporting, and operational
+                trace
+              </span>
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-xs font-bold text-lilac">
+            {advancedView ? "Collapse" : "Expand"}
+            <ChevronDown
+              className={`h-4 w-4 transition ${advancedView ? "rotate-180" : ""}`}
+            />
+          </span>
+        </button>
+
+        {advancedView ? (
+          <div className="border-t border-lilac/15 p-4 sm:p-5">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              {advancedActions.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link
+                    className="rounded-md border border-white/80 bg-white/65 p-4 transition hover:border-lilac/25 hover:bg-white"
+                    key={action.title}
+                    to={projectPath(action.path, projectId)}
+                  >
                     <span
-                      className={`grid h-9 w-9 place-items-center rounded-md ${toneClass(item.tone)}`}
+                      className={`grid h-8 w-8 place-items-center rounded-md ${action.tone}`}
                     >
                       <Icon className="h-4 w-4" />
                     </span>
-                    <ArrowUpRight className="h-4 w-4 text-slate-300 transition group-hover:text-lilac" />
+                    <h4 className="mt-3 text-xs font-bold text-ink">
+                      {action.title}
+                    </h4>
+                    <p className="mt-1.5 text-[11px] leading-4 text-muted">
+                      {action.description}
+                    </p>
+                  </Link>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 rounded-md border border-white/80 bg-white/55 px-4 py-3">
+              <p className="text-[10px] font-bold uppercase text-lilac">
+                Complete data flow
+              </p>
+              <div className="mt-3 grid grid-cols-3 gap-2 md:grid-cols-6">
+                {dataFlow.map((step, index) => (
+                  <div className="flex items-center gap-2" key={step}>
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-lilac/15 text-[10px] font-bold text-lilac">
+                      {index + 1}
+                    </span>
+                    <span className="truncate text-[11px] font-semibold text-ink">
+                      {step}
+                    </span>
                   </div>
-                  <p className="mt-4 text-[10px] font-bold uppercase text-muted">
-                    {item.group}
-                  </p>
-                  <h4 className="mt-1 text-sm font-bold text-ink">
-                    {item.title}
-                  </h4>
-                  <p className="mt-2 text-xs leading-5 text-muted">
-                    {item.description}
-                  </p>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-
-        <aside className="space-y-4">
-          <div className="rounded-md border border-line bg-white p-4">
-            <p className="text-xs font-bold text-ink">Suggested next moves</p>
-            <div className="mt-3 space-y-1">
-              <QuickRoute
-                description="Bring in a fresh CSV or Excel file"
-                label="Import local data"
-                path={projectPath("/import", projectId)}
-                tone="sky"
-              />
-              <QuickRoute
-                description="Explore current project tables"
-                label="Inspect data quality"
-                path={projectPath("/datasets", projectId)}
-                tone="mint"
-              />
-              <QuickRoute
-                description="Turn a data view into a visual"
-                label="Configure a chart"
-                path={projectPath("/charts", projectId)}
-                tone="lilac"
-              />
+                ))}
+              </div>
             </div>
           </div>
-
-          <div className="rounded-md border border-rose/20 bg-rose/10 p-4">
-            <div className="flex items-center gap-2 text-xs font-bold text-rose">
-              <Sparkles className="h-4 w-4" />
-              Designed for range
-            </div>
-            <p className="mt-2 text-xs leading-5 text-muted">
-              Visual tools guide everyday work. SQL and reusable views stay
-              close when deeper analysis is needed.
-            </p>
-          </div>
-        </aside>
+        ) : null}
       </div>
     </section>
   );
 }
 
-function ProjectSignal({ label }: { label: string }) {
+function DreamDataScene({ projectId }: { projectId: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-md border border-white/80 bg-white/70 px-3 py-2 text-xs font-semibold text-ink">
-      <CheckCircle2 className="h-3.5 w-3.5 text-mint" />
-      {label}
+    <div className="relative min-h-72 overflow-hidden border-t border-lilac/15 bg-[#dff5ef] p-6 lg:border-l lg:border-t-0">
+      <div className="absolute inset-x-6 top-6 h-14 rounded-md border border-white/60 bg-[#cfe9ff]" />
+      <CloudSun className="absolute right-10 top-9 h-7 w-7 text-sky" />
+      <Sparkles className="absolute left-10 top-10 h-5 w-5 text-rose" />
+      <Sparkles className="absolute right-24 top-24 h-4 w-4 text-lilac" />
+
+      <div className="relative mx-auto mt-16 max-w-sm">
+        <div className="mx-auto w-44 rounded-md border border-lilac/20 bg-[#f0eaff] p-4 shadow-panel">
+          <div className="flex items-center gap-3">
+            <span className="grid h-9 w-9 place-items-center rounded-md bg-lilac text-white">
+              <Database className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-xs font-bold text-ink">Dream dataset</p>
+              <p className="mt-1 font-mono text-[10px] text-muted">
+                {projectId}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mx-auto h-7 w-px bg-lilac/30" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-md border border-sky/20 bg-[#e8f5ff] p-3 shadow-sm">
+            <Table2 className="h-4 w-4 text-sky" />
+            <p className="mt-2 text-[11px] font-bold text-ink">Clean rows</p>
+          </div>
+          <div className="rounded-md border border-rose/20 bg-[#ffe9f1] p-3 shadow-sm">
+            <BarChart3 className="h-4 w-4 text-rose" />
+            <p className="mt-2 text-[11px] font-bold text-ink">
+              Bright insight
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute bottom-4 left-5 flex items-center gap-2 rounded-md border border-white/70 bg-white/55 px-3 py-2 text-[10px] font-bold text-mint">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        Traceable by design
+      </div>
     </div>
   );
 }
 
-function Metric({
+function CapabilityChip({
   label,
-  value,
   tone,
 }: {
   label: string;
-  value: string;
-  tone: "brand" | "mint" | "lilac" | "rose";
+  tone: "mint" | "brand" | "rose";
 }) {
-  const line = {
-    brand: "bg-brand",
-    lilac: "bg-lilac",
-    mint: "bg-mint",
-    rose: "bg-rose",
+  const className = {
+    brand: "border-brand/20 bg-brand/10 text-brand",
+    mint: "border-mint/20 bg-mint/10 text-mint",
+    rose: "border-rose/20 bg-rose/10 text-rose",
   }[tone];
   return (
-    <div className="relative border-b border-line px-5 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
-      <span className={`absolute inset-y-0 left-0 w-1 ${line}`} />
-      <p className="text-[10px] font-bold uppercase text-muted">{label}</p>
-      <p className="mt-1 text-sm font-bold text-ink">{value}</p>
-    </div>
-  );
-}
-
-function QuickRoute({
-  description,
-  label,
-  path,
-  tone,
-}: {
-  description: string;
-  label: string;
-  path: string;
-  tone: "sky" | "mint" | "lilac";
-}) {
-  const dot = {
-    lilac: "bg-lilac",
-    mint: "bg-mint",
-    sky: "bg-sky",
-  }[tone];
-  return (
-    <Link
-      className="group flex items-start gap-3 rounded-md px-2 py-3 transition hover:bg-canvas"
-      to={path}
+    <span
+      className={`rounded-md border px-2.5 py-1.5 text-[11px] font-bold ${className}`}
     >
-      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot}`} />
-      <span className="min-w-0 flex-1">
-        <span className="block text-xs font-bold text-ink group-hover:text-lilac">
-          {label}
-        </span>
-        <span className="mt-1 block text-[11px] leading-4 text-muted">
-          {description}
-        </span>
-      </span>
-      <ArrowUpRight className="mt-1 h-3.5 w-3.5 text-slate-300 group-hover:text-lilac" />
-    </Link>
+      {label}
+    </span>
   );
-}
-
-function toneClass(
-  tone: "brand" | "sky" | "lilac" | "rose" | "mint" | "amber",
-) {
-  return {
-    amber: "bg-amber/10 text-amber",
-    brand: "bg-brand/10 text-brand",
-    lilac: "bg-lilac/10 text-lilac",
-    mint: "bg-mint/10 text-mint",
-    rose: "bg-rose/10 text-rose",
-    sky: "bg-sky/10 text-sky",
-  }[tone];
 }

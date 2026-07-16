@@ -21,6 +21,7 @@ export interface NavigationItem {
 
 export interface NavigationSection {
   label: string;
+  advanced?: boolean;
   items: NavigationItem[];
 }
 
@@ -60,25 +61,6 @@ export const navigationSections: NavigationSection[] = [
     ],
   },
   {
-    label: "Shape and explore",
-    items: [
-      {
-        label: "Cleaning",
-        description: "Reusable visual transformation recipes",
-        path: "/cleaning",
-        icon: BrushCleaning,
-        accent: "rose",
-      },
-      {
-        label: "SQL Workspace",
-        description: "Read-only project analysis queries",
-        path: "/sql",
-        icon: SquareTerminal,
-        accent: "lilac",
-      },
-    ],
-  },
-  {
     label: "Tell the story",
     items: [
       {
@@ -93,6 +75,26 @@ export const navigationSections: NavigationSection[] = [
         description: "Compose analysis and reports",
         path: "/dashboards",
         icon: LayoutDashboard,
+        accent: "lilac",
+      },
+    ],
+  },
+  {
+    label: "Advanced tools",
+    advanced: true,
+    items: [
+      {
+        label: "Cleaning",
+        description: "Reusable visual transformation recipes",
+        path: "/cleaning",
+        icon: BrushCleaning,
+        accent: "rose",
+      },
+      {
+        label: "SQL Workspace",
+        description: "Read-only project analysis queries",
+        path: "/sql",
+        icon: SquareTerminal,
         accent: "lilac",
       },
     ],

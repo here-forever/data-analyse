@@ -1,28 +1,32 @@
-import { Menu, Search, ScrollText } from "lucide-react";
+import { Menu, Search, ScrollText, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { QuickActionMenu } from "./QuickActionMenu";
 import { projectPath } from "./shellLinks";
 
 interface TopBarProps {
+  advancedView: boolean;
   pageDescription: string;
   pageSection: string;
   pageTitle: string;
   projectId: string;
   onOpenMobileNavigation: () => void;
   onOpenSearch: () => void;
+  onToggleAdvancedView: () => void;
 }
 
 export function TopBar({
+  advancedView,
   pageDescription,
   pageSection,
   pageTitle,
   projectId,
   onOpenMobileNavigation,
   onOpenSearch,
+  onToggleAdvancedView,
 }: TopBarProps) {
   return (
-    <header className="sticky top-0 z-40 border-b border-line/80 bg-white/90 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 border-b border-lilac/15 bg-[#fff9fc]/95 backdrop-blur-xl">
       <div className="flex h-[76px] items-center gap-3 px-4 sm:px-5 lg:px-7">
         <button
           aria-label="Open navigation"
@@ -71,6 +75,35 @@ export function TopBar({
         >
           <ScrollText className="h-4 w-4" />
         </Link>
+
+        <button
+          aria-checked={advancedView}
+          className={[
+            "hidden h-10 items-center gap-2 rounded-md border px-3 text-xs font-semibold transition lg:inline-flex",
+            advancedView
+              ? "border-lilac/30 bg-lilac/10 text-lilac"
+              : "border-line bg-white text-muted hover:border-lilac/30 hover:text-lilac",
+          ].join(" ")}
+          onClick={onToggleAdvancedView}
+          role="switch"
+          type="button"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Pro view
+          <span
+            className={[
+              "relative h-4 w-7 rounded-full transition",
+              advancedView ? "bg-lilac" : "bg-slate-200",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition",
+                advancedView ? "left-3.5" : "left-0.5",
+              ].join(" ")}
+            />
+          </span>
+        </button>
 
         <QuickActionMenu projectId={projectId} />
 

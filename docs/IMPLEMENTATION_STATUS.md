@@ -129,7 +129,10 @@ Initial core tables have been modeled and migrated:
 - Tailwind design tokens now include the Workshop Toolkit-inspired sky, lilac, rose, and mint palette for gradual frontend visual-system adoption.
 - The application shell now uses a grouped, project-aware sidebar with compact desktop mode, a mobile navigation drawer, and persistent access to the complete data workflow.
 - The top workspace bar now provides route context, project identity, global navigation search, task-center access, and a consolidated workflow start menu instead of scattering similar action buttons.
-- The workspace home is now an operational project cockpit with the main data flow, project readiness signals, metric bands, module entry cards, and suggested next moves.
+- The workspace now defaults to a guided ordinary-user view and offers a persistent Pro view switch for revealing cleaning, SQL, connector, history, and trace workflows.
+- The sidebar groups professional tools inside an advanced section that stays collapsed by default and automatically opens when Pro view or an advanced route requires it.
+- The workspace home now uses a dreamy pastel guided composition with three primary workflow actions, an original dataset illustration, and a collapsible professional workspace containing the complete data flow.
+- The data source center keeps local file intake visible by default while external databases, upload history, and formal dataset bridge details live inside an advanced disclosure panel.
 - Data source, import, dataset, cleaning, SQL, chart/dashboard, and task pages now share a consistent artistic workspace header and compact project toolbar treatment.
 - Placeholder pages remain only for features not yet implemented beyond the current data intake, dataset, cleaning, SQL, chart, dashboard, and task surfaces.
 - Workspace home page now acts as a demo entry screen linking into the main implemented workflow surfaces.
@@ -153,10 +156,10 @@ Initial core tables have been modeled and migrated:
 - Alembic migration has been applied to Docker PostgreSQL.
 - Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, related-resource navigation, external PostgreSQL/MySQL connection create/list/test flows, schema discovery, external preview, field-edited import, external table import retry, external import history/detail, external table import, and external read-only SQL import were verified through tests or API flows.
 - Backend test suite passed locally: 59 tests.
-- Frontend test suite passed: 32 tests.
+- Frontend test suite passed: 34 tests.
 - Frontend lint passed.
 - Frontend build passed, with only the existing ECharts chunk-size warning.
-- Desktop expanded and compact sidebar states, the grouped start menu, workspace home, and the data source workbench were visually checked against the running Docker frontend.
+- Guided and Pro workspace modes, the collapsed advanced sidebar, and the ordinary/advanced data source states were visually checked against the rebuilt Docker frontend with no browser console errors.
 - Demo seed has been executed successfully through Docker Compose.
 - Frontend demo pages were checked through a headless Edge/Playwright pass against the running Docker stack: home, datasets, charts, dashboards, and tasks loaded expected demo content, and the chart page rendered an ECharts canvas.
 
