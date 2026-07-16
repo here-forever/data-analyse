@@ -11,8 +11,8 @@
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
-  color: #152033;
-  background: #f7f8fc;
+  color: #182238;
+  background: #f8f8fc;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -23,6 +23,58 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+}
+
+::selection {
+  color: #182238;
+  background: rgba(118, 87, 216, 0.2);
+}
+
+.workspace-canvas {
+  background-color: #f8f8fc;
+  background-image:
+    linear-gradient(180deg, rgba(59, 158, 232, 0.055), transparent 230px),
+    linear-gradient(90deg, rgba(118, 87, 216, 0.025), transparent 38%);
+}
+
+.workspace-page-header {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dfe4ee;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 1.25rem;
+}
+
+.workspace-page-header::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  content: "";
+  background: linear-gradient(
+    180deg,
+    #3b9ee8 0 25%,
+    #7657d8 25% 50%,
+    #d95f8d 50% 75%,
+    #2d9d78 75% 100%
+  );
+}
+
+.workspace-project-toolbar {
+  border: 1px solid rgba(223, 228, 238, 0.95);
+  border-radius: 0.5rem;
+  background: rgba(248, 248, 252, 0.88);
+  padding: 0.375rem;
+}
+
+* {
+  scrollbar-color: #c8cfdd transparent;
+  scrollbar-width: thin;
+}
+
+*:focus-visible {
+  outline: 2px solid rgba(118, 87, 216, 0.55);
+  outline-offset: 2px;
 }
 
 button,

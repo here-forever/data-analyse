@@ -190,11 +190,11 @@ export function CleaningWorkbenchPage() {
     !executeMutation.isPending;
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-end xl:justify-between">
+    <section className="space-y-6">
+      <div className="workspace-page-header flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-sm font-medium text-cyan">Cleaning</p>
-          <h2 className="mt-1 text-2xl font-semibold text-ink">
+          <p className="text-sm font-bold text-rose">Cleaning</p>
+          <h2 className="mt-1 text-2xl font-bold text-ink">
             Cleaning workbench
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
@@ -203,7 +203,10 @@ export function CleaningWorkbenchPage() {
           </p>
         </div>
 
-        <form className="flex w-full max-w-xl gap-2" onSubmit={submitProject}>
+        <form
+          className="workspace-project-toolbar flex w-full max-w-xl gap-2"
+          onSubmit={submitProject}
+        >
           <label className="sr-only" htmlFor="cleaning-project-id">
             Project ID
           </label>

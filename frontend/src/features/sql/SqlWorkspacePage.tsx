@@ -77,20 +77,21 @@ export function SqlWorkspacePage() {
   }
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-end xl:justify-between">
+    <section className="space-y-6">
+      <div className="workspace-page-header flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-sm font-medium text-cyan">SQL</p>
-          <h2 className="mt-1 text-2xl font-semibold text-ink">
-            SQL workspace
-          </h2>
+          <p className="text-sm font-bold text-lilac">SQL</p>
+          <h2 className="mt-1 text-2xl font-bold text-ink">SQL workspace</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
             Query project datasets with read-only SQL and prepare reusable
             analytical results.
           </p>
         </div>
 
-        <form className="flex w-full max-w-xl gap-2" onSubmit={submitProject}>
+        <form
+          className="workspace-project-toolbar flex w-full max-w-xl gap-2"
+          onSubmit={submitProject}
+        >
           <label className="sr-only" htmlFor="sql-project-id">
             Project ID
           </label>
@@ -312,7 +313,11 @@ function QueryEditor({
             </label>
             <button
               className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-45 md:mt-6"
-              disabled={isSaving || sql.trim().length === 0 || dataViewName.trim().length === 0}
+              disabled={
+                isSaving ||
+                sql.trim().length === 0 ||
+                dataViewName.trim().length === 0
+              }
               onClick={onSave}
               type="button"
             >
@@ -326,8 +331,8 @@ function QueryEditor({
         {saveError ? <Alert message={saveError.message} /> : null}
         {savedDataView ? (
           <div className="rounded-md border border-emerald/20 bg-emerald/10 px-3 py-3 text-sm text-emerald">
-            Saved {savedDataView.name} ({savedDataView.row_count} rows). It is now available for
-            charts and dashboards.
+            Saved {savedDataView.name} ({savedDataView.row_count} rows). It is
+            now available for charts and dashboards.
           </div>
         ) : null}
       </div>

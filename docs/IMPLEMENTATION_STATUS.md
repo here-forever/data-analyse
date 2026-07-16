@@ -127,6 +127,10 @@ Initial core tables have been modeled and migrated:
 - Task center related-resource links for datasets, data views, charts, and dashboards, with target pages reading route query parameters for selection/highlighting.
 - Data source center external database panel for PostgreSQL/MySQL connection creation, encrypted credential rotation, metadata editing, recoverable archive/restore, saved connection listing, status display, connection error display, manual connection testing, schema discovery, preview-before-import, editable field confirmation, external table import, advanced read-only SQL import, and external import history/detail.
 - Tailwind design tokens now include the Workshop Toolkit-inspired sky, lilac, rose, and mint palette for gradual frontend visual-system adoption.
+- The application shell now uses a grouped, project-aware sidebar with compact desktop mode, a mobile navigation drawer, and persistent access to the complete data workflow.
+- The top workspace bar now provides route context, project identity, global navigation search, task-center access, and a consolidated workflow start menu instead of scattering similar action buttons.
+- The workspace home is now an operational project cockpit with the main data flow, project readiness signals, metric bands, module entry cards, and suggested next moves.
+- Data source, import, dataset, cleaning, SQL, chart/dashboard, and task pages now share a consistent artistic workspace header and compact project toolbar treatment.
 - Placeholder pages remain only for features not yet implemented beyond the current data intake, dataset, cleaning, SQL, chart, dashboard, and task surfaces.
 - Workspace home page now acts as a demo entry screen linking into the main implemented workflow surfaces.
 - Frontend API client tests.
@@ -149,9 +153,10 @@ Initial core tables have been modeled and migrated:
 - Alembic migration has been applied to Docker PostgreSQL.
 - Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, related-resource navigation, external PostgreSQL/MySQL connection create/list/test flows, schema discovery, external preview, field-edited import, external table import retry, external import history/detail, external table import, and external read-only SQL import were verified through tests or API flows.
 - Backend test suite passed locally: 59 tests.
-- Frontend test suite passed: 28 tests.
+- Frontend test suite passed: 32 tests.
 - Frontend lint passed.
 - Frontend build passed, with only the existing ECharts chunk-size warning.
+- Desktop expanded and compact sidebar states, the grouped start menu, workspace home, and the data source workbench were visually checked against the running Docker frontend.
 - Demo seed has been executed successfully through Docker Compose.
 - Frontend demo pages were checked through a headless Edge/Playwright pass against the running Docker stack: home, datasets, charts, dashboards, and tasks loaded expected demo content, and the chart page rendered an ECharts canvas.
 
