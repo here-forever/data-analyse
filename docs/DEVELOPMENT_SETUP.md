@@ -1,6 +1,6 @@
 # Development Setup
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 ## Current Environment Status
 
@@ -28,6 +28,26 @@ Use local commands for fast backend/frontend checks, and Docker Compose for inte
 1. Backend FastAPI tests using the local Python virtual environment.
 2. Frontend React tests/build using `npm.cmd`.
 3. Docker Compose for PostgreSQL, Redis, backend, and frontend integration.
+
+## Recommended Task Runner
+
+Use the Python task runner for repeatable project commands on Windows, WSL, and Linux:
+
+```powershell
+python scripts/dev.py doctor
+python scripts/dev.py status
+python scripts/dev.py backend-test
+python scripts/dev.py frontend-check
+python scripts/dev.py check
+python scripts/dev.py start
+python scripts/dev.py up
+```
+
+The runner invokes executables with argument arrays instead of shell command strings. This avoids PowerShell profile noise, Bash-only operators such as `&&`, quoting problems in paths with spaces, and the Windows `npm.ps1` execution-policy issue.
+
+Use `start` for the normal fast path with existing images. Use `up` only when Dockerfiles or dependencies changed and the stack must be rebuilt.
+
+Python is the preferred orchestration layer for repeatable development tasks, but Git, Docker, npm, and platform diagnostics should still run through their native executables.
 
 ## Required Commands To Check Later
 

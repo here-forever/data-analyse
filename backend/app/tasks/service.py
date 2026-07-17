@@ -42,6 +42,62 @@ class TaskService:
     def reset(self) -> None:
         self._tasks = {}
 
+    def start_task(
+        self,
+        *,
+        project_id: str | None,
+        name: str,
+        task_type: str,
+        related_resource_type: str | None = None,
+        related_resource_id: str | None = None,
+        retry_payload: dict[str, object] | None = None,
+        progress: int = 5,
+    ) -> Task:
+        if progress < 0 or progress >= 100:
+            raise AppError(
+                "Running task progress must be between 0 and 99",
+                "invalid_task_progress",
+                400,
+            )
+
+        now = datetime.now(UTC)
+        return self._save_task(
+            Task(
+                id=self._new_task_id(),
+                project_id=project_id,
+                initiator_id=self.initiator_id,
+                name=name,
+                task_type=task_type,
+                status="running",
+                progress=progress,
+                error_message=None,
+                related_resource_type=related_resource_type,
+                related_resource_id=related_resource_id,
+                retry_payload=retry_payload,
+                started_at=now,
+                finished_at=None,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    def update_progress(self, task_id: str, progress: int) -> Task:
+        task = self.get_task(task_id)
+        if task.status != "running":
+            raise AppError("Only running tasks can update progress", "task_not_running", 409)
+        if progress < task.progress or progress >= 100:
+            raise AppError(
+                "Task progress must be monotonic and lower than 100",
+                "invalid_task_progress",
+                400,
+            )
+        return self._update_task(
+            task_id=task_id,
+            status="running",
+            progress=progress,
+            error_message=None,
+        )
+
     def record_success(
         self,
         *,

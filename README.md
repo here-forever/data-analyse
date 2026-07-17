@@ -57,15 +57,18 @@ Copy `.env.example` to `.env` and replace every placeholder before using local s
 
 Setup, migration, test, and troubleshooting commands are documented in [`docs/DEVELOPMENT_SETUP.md`](docs/DEVELOPMENT_SETUP.md). Backend- and frontend-specific notes are also available in [`backend/README.md`](backend/README.md) and [`frontend/README.md`](frontend/README.md).
 
+Use the cross-platform task runner to avoid shell-specific quoting and command chaining:
+
+```bash
+python scripts/dev.py doctor
+python scripts/dev.py status
+python scripts/dev.py check
+```
+
 ## Validation
 
 ```powershell
-backend\.venv\Scripts\python -m ruff check backend
-backend\.venv\Scripts\python -m pytest backend\tests -q
-cd frontend
-npm.cmd run lint
-npm.cmd test -- --run
-npm.cmd run build
+python scripts/dev.py check
 ```
 
 GitHub Actions runs the equivalent backend and frontend checks for pushes and pull requests.

@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 This document records what has already been implemented so the project can continue without losing context.
 
@@ -64,6 +64,7 @@ The project now also has a demo-ready MVP seed path for `prj_demo`, so the curre
 - Chart definition creation/list APIs backed by data views.
 - Dashboard/report layout creation/list APIs backed by chart resources.
 - Task center API for project-scoped workflow task status visibility.
+- File dataset materialization now creates a durable running task before work begins, advances through validation/source/materialization phases, and updates the same task to success or failure.
 - Task failure records for import parsing, dataset materialization, cleaning execution, SQL execution/materialization, and chart/dashboard save actions.
 - Task retry API with persisted retry metadata and in-process synchronous replay for selected safe operations.
 - Retryable task execution currently covers dataset materialization, external table import, external SQL import, cleaning recipe execution, SQL data view materialization, chart save, and dashboard/report save.
@@ -149,6 +150,7 @@ Initial core tables have been modeled and migrated:
 - Frontend service.
 - Backend and frontend Dockerfiles.
 - `.env.example` for local configuration.
+- Cross-platform `scripts/dev.py` task runner for tool diagnostics, stack status/start/rebuild, backend tests, frontend checks, and complete project validation without shell-specific command chaining.
 
 ## Verified So Far
 
@@ -157,7 +159,7 @@ Initial core tables have been modeled and migrated:
 - Backend health check is reachable at `http://127.0.0.1:8000/api/health`.
 - Alembic migration has been applied to Docker PostgreSQL.
 - Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, related-resource navigation, external PostgreSQL/MySQL connection create/list/test flows, schema discovery, external preview, field-edited import, external table import retry, external import history/detail, external table import, and external read-only SQL import were verified through tests or API flows.
-- Backend test suite passed locally: 59 tests.
+- Backend test suite passed in Docker: 62 tests.
 - Frontend test suite passed: 34 tests.
 - Frontend lint passed.
 - Frontend build passed, with only the existing ECharts chunk-size warning.
@@ -179,6 +181,7 @@ Initial core tables have been modeled and migrated:
 - Dataset quality profiling is computed on demand from materialized rows and is not yet cached or task-backed.
 - Operation logs and lineage records exist for the implemented workflow actions, but the lineage graph UI is not implemented yet.
 - Task center records synchronous workflow actions as completed or failed/retryable tasks.
+- Dataset materialization progress is phase-based inside the synchronous API request; per-batch live progress, cancellation, and a separate worker process are not implemented yet.
 - Retry execution is synchronous inside the API request for selected safe operations; it is not yet backed by Redis/Celery/RQ or a distributed worker.
 - File preview parse failures are recorded against staged uploaded files; user-correctable validation failures remain non-retryable, while unexpected parse failures can keep retry metadata.
 - Authentication is still development-oriented and not production JWT/auth hardening.
@@ -205,10 +208,10 @@ Future work must preserve these boundaries:
 
 ## Recommended Next Build Step
 
-The next implementation step should move the now-bounded import path behind the existing task boundary without jumping directly to a distributed platform:
+The next implementation step should continue strengthening the now-visible import task boundary without jumping directly to a distributed platform:
 
-1. Move long-running imports behind the existing task boundary with progress updates and cancellation-safe failure records.
-2. Add source-side cursor streaming for external table and SQL imports while retaining bounded preview limits.
+1. Add source-side cursor streaming for external table and SQL imports while retaining bounded preview limits.
+2. Add per-batch progress callbacks and cancellation-safe checkpoints without committing partial dataset metadata.
 3. Introduce a lightweight worker adapter that can later switch to Redis/Celery or RQ before scheduled sync is added.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

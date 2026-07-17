@@ -1,6 +1,6 @@
 # Project Memory: Integrated Data Analysis System
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 ## 1. Project Positioning
 
@@ -546,6 +546,13 @@ Guidelines:
 - Do not overwrite or discard user changes without explicit approval.
 - Prefer branches for significant features.
 - Keep documentation updated when architecture decisions change.
+
+Development command rule:
+
+- Use `python scripts/dev.py` as the cross-platform entry point for repeatable status, startup, test, lint, and build workflows.
+- Invoke Git, Docker, npm, and other executables with argument arrays instead of shell-composed command strings.
+- On Windows automation, prefer non-login PowerShell execution, avoid Bash-only operators such as `&&`, and use `npm.cmd` when PowerShell script execution is restricted.
+- Keep direct native commands available for focused diagnostics; Python orchestrates them but does not replace the underlying tools.
 
 Suggested early milestones:
 
