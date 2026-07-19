@@ -1,6 +1,6 @@
 # Project Memory: Integrated Data Analysis System
 
-Last updated: 2026-07-17
+Last updated: 2026-07-19
 
 ## 1. Project Positioning
 
@@ -549,10 +549,12 @@ Guidelines:
 
 Development command rule:
 
-- Use `python scripts/dev.py` as the cross-platform entry point for repeatable status, startup, test, lint, and build workflows.
-- Invoke Git, Docker, npm, and other executables with argument arrays instead of shell-composed command strings.
-- On Windows automation, prefer non-login PowerShell execution, avoid Bash-only operators such as `&&`, and use `npm.cmd` when PowerShell script execution is restricted.
-- Keep direct native commands available for focused diagnostics; Python orchestrates them but does not replace the underlying tools.
+- Use PowerShell 7 for Windows development and automation commands.
+- Invoke it as `pwsh -NoLogo -NoProfile` so project commands do not depend on user profile configuration.
+- Run Git, Docker, Python, Node.js, and `npm.cmd` through their native commands; do not add Python wrappers solely to avoid legacy PowerShell syntax issues.
+- Prefer one clearly scoped command per line, quote paths containing spaces, and use PowerShell-native location and process controls for multi-step workflows.
+- PowerShell 7 supports `&&`, but keep validation and operational commands explicit so failures are easy to locate and reproduce.
+- Continue using `npm.cmd` on Windows when the execution policy blocks `npm.ps1`.
 
 Suggested early milestones:
 

@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-17
+Last updated: 2026-07-19
 
 This document records what has already been implemented so the project can continue without losing context.
 
@@ -150,7 +150,7 @@ Initial core tables have been modeled and migrated:
 - Frontend service.
 - Backend and frontend Dockerfiles.
 - `.env.example` for local configuration.
-- Cross-platform `scripts/dev.py` task runner for tool diagnostics, stack status/start/rebuild, backend tests, frontend checks, and complete project validation without shell-specific command chaining.
+- PowerShell 7 native development workflow for tool diagnostics, stack status/start/rebuild, backend tests, and frontend validation without a Python shell-compatibility wrapper.
 
 ## Verified So Far
 

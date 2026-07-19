@@ -1,6 +1,6 @@
 # Development Setup
 
-Last updated: 2026-07-17
+Last updated: 2026-07-19
 
 ## Current Environment Status
 
@@ -15,6 +15,7 @@ Verified on the current machine:
 - Docker is available.
 - Docker Compose is available.
 - WSL2 is available.
+- PowerShell 7.6.3 is available.
 
 Known local notes:
 
@@ -29,25 +30,19 @@ Use local commands for fast backend/frontend checks, and Docker Compose for inte
 2. Frontend React tests/build using `npm.cmd`.
 3. Docker Compose for PostgreSQL, Redis, backend, and frontend integration.
 
-## Recommended Task Runner
+## PowerShell 7 Command Rule
 
-Use the Python task runner for repeatable project commands on Windows, WSL, and Linux:
+Use PowerShell 7 for Windows development commands and start it without loading a user profile:
 
 ```powershell
-python scripts/dev.py doctor
-python scripts/dev.py status
-python scripts/dev.py backend-test
-python scripts/dev.py frontend-check
-python scripts/dev.py check
-python scripts/dev.py start
-python scripts/dev.py up
+pwsh -NoLogo -NoProfile
 ```
 
-The runner invokes executables with argument arrays instead of shell command strings. This avoids PowerShell profile noise, Bash-only operators such as `&&`, quoting problems in paths with spaces, and the Windows `npm.ps1` execution-policy issue.
+Run Git, Docker, Python, Node.js, and `npm.cmd` as native commands. Prefer one clearly scoped command per line, quote paths containing spaces, and use `Push-Location` / `Pop-Location` when several commands must run from a subdirectory. PowerShell 7 supports `&&`, but project instructions and automation should not depend on dense shell command chains.
 
-Use `start` for the normal fast path with existing images. Use `up` only when Dockerfiles or dependencies changed and the stack must be rebuilt.
+Use `docker compose up -d` for the normal fast path with existing images. Add `--build` only when Dockerfiles or dependencies changed and the stack must be rebuilt.
 
-Python is the preferred orchestration layer for repeatable development tasks, but Git, Docker, npm, and platform diagnostics should still run through their native executables.
+Do not add Python scripts solely to work around legacy PowerShell parsing or quoting behavior. Python remains the backend and data-processing runtime.
 
 ## Required Commands To Check Later
 
@@ -80,13 +75,13 @@ cd ..
 Run backend tests:
 
 ```powershell
-backend\.venv\Scripts\python -m pytest backend\tests -q
+backend\.venv\Scripts\python.exe -m pytest backend\tests -q
 ```
 
 Run backend dev server:
 
 ```powershell
-backend\.venv\Scripts\python -m uvicorn app.main:app --app-dir backend --reload
+backend\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload
 ```
 
 ## Frontend Commands
