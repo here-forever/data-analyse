@@ -152,11 +152,13 @@ Stop services:
 docker compose down
 ```
 
-Reset Docker-managed database/cache volumes:
+Destructively reset Docker-managed database, uploaded-file, cache, and dependency volumes:
 
 ```powershell
 docker compose down -v
 ```
+
+Do not run this command against a workspace containing data that must be retained. Export the PostgreSQL database and preserve the backend storage volume before any reset. Normal shutdown uses `docker compose down` without `-v`.
 
 Run backend database migrations:
 

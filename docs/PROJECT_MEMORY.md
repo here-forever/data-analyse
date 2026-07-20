@@ -556,6 +556,14 @@ Development command rule:
 - PowerShell 7 supports `&&`, but keep validation and operational commands explicit so failures are easy to locate and reproduce.
 - Continue using `npm.cmd` on Windows when the execution policy blocks `npm.ps1`.
 
+Repository hygiene rule:
+
+- Do not commit virtual environments, dependency directories, build output, caches, runtime uploads, database dumps, credentials, or private environment files.
+- Keep tracked examples synthetic, minimal, and directly useful to the documented demo workflow.
+- Do not keep `.gitkeep` files after a directory contains tracked project files.
+- Treat PostgreSQL, Redis, and backend storage volumes as durable runtime state. Inspect and back them up before destructive cleanup; never include `docker compose down -v` in routine cleanup.
+- Remove completed temporary agent plans once their durable decisions are captured in the roadmap, project memory, implementation status, and Git history.
+
 Suggested early milestones:
 
 1. Project documentation and initial architecture notes.
@@ -606,13 +614,10 @@ Do not overbuild these in the first stage unless needed for architectural placeh
 
 ## 19. Next Recommended Step
 
-The next theoretical design step should be a phased roadmap:
+The project has passed skeleton and demo implementation. Continue strengthening the file and external-database ingestion boundary before introducing a distributed platform:
 
-- MVP boundary.
-- Phase 1 module list.
-- Phase 1 page list.
-- Database conceptual model.
-- API boundary draft.
-- Development milestone order.
+1. Add source-side cursor streaming for external table and SQL imports while preserving bounded previews.
+2. Add per-batch task progress and cancellation-safe checkpoints without exposing partial dataset metadata.
+3. Introduce a lightweight worker adapter that can later move to Redis with Celery or RQ.
 
-Only after the user approves the roadmap should implementation begin.
+Keep this work connected to operation logs, lineage, retry behavior, and durable source retention.

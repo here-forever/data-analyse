@@ -137,7 +137,7 @@ Initial core tables have been modeled and migrated:
 - The workspace home now uses a dreamy pastel guided composition with three primary workflow actions, an original dataset illustration, and a collapsible professional workspace containing the complete data flow.
 - The data source center keeps local file intake visible by default while external databases, upload history, and formal dataset bridge details live inside an advanced disclosure panel.
 - Data source, import, dataset, cleaning, SQL, chart/dashboard, and task pages now share a consistent artistic workspace header and compact project toolbar treatment.
-- Placeholder pages remain only for features not yet implemented beyond the current data intake, dataset, cleaning, SQL, chart, dashboard, and task surfaces.
+- All currently routed workflow areas use implemented screens; the obsolete generic placeholder page has been removed.
 - Workspace home page now acts as a demo entry screen linking into the main implemented workflow surfaces.
 - Frontend API client tests.
 
@@ -151,6 +151,13 @@ Initial core tables have been modeled and migrated:
 - Backend and frontend Dockerfiles.
 - `.env.example` for local configuration.
 - PowerShell 7 native development workflow for tool diagnostics, stack status/start/rebuild, backend tests, and frontend validation without a Python shell-compatibility wrapper.
+
+## Repository Hygiene
+
+- Generated caches, virtual environments, frontend dependencies/build output, local uploads, database dumps, and private environment files are excluded from Git.
+- Early agent-only skeleton execution plans and redundant directory placeholder files have been removed now that their milestones are represented by the roadmap, implementation status, and Git history.
+- The tracked data surface contains only a small synthetic demo CSV; Docker database and upload volumes remain explicitly outside source control.
+- Runtime data volumes are treated as durable state and must not be deleted as part of ordinary source cleanup.
 
 ## Verified So Far
 
