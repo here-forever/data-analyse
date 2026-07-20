@@ -24,6 +24,8 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   dashboard_save: "Dashboard/report save",
   dataset_materialization: "Dataset materialization",
   derived_dataset_materialization: "Derived dataset",
+  external_sql_import: "External SQL import",
+  external_table_import: "External table import",
   file_preview_parse: "File preview parse",
   sql_query_run: "SQL query",
   sql_data_view_materialization: "SQL data view",
@@ -72,6 +74,13 @@ export function TaskCenterPage() {
     queryKey: ["tasks", submittedProjectId],
     queryFn: () => listTasks(submittedProjectId),
     enabled: submittedProjectId.trim().length > 0,
+    refetchInterval: (query) =>
+      query.state.data?.items.some(
+        (task) => task.status === "pending" || task.status === "running",
+      )
+        ? 1000
+        : 5000,
+    refetchIntervalInBackground: true,
   });
 
   const tasks = useMemo(() => tasksQuery.data?.items ?? [], [tasksQuery.data]);
@@ -91,11 +100,11 @@ export function TaskCenterPage() {
   }
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-end xl:justify-between">
+    <section className="space-y-6">
+      <div className="workspace-page-header flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-sm font-medium text-cyan">Task center</p>
-          <h2 className="mt-1 text-2xl font-semibold text-ink">
+          <p className="text-sm font-bold text-amber">Task center</p>
+          <h2 className="mt-1 text-2xl font-bold text-ink">
             Workflow task visibility
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
@@ -104,7 +113,10 @@ export function TaskCenterPage() {
           </p>
         </div>
 
-        <form className="flex w-full max-w-xl gap-2" onSubmit={submitProject}>
+        <form
+          className="workspace-project-toolbar flex w-full max-w-xl gap-2"
+          onSubmit={submitProject}
+        >
           <label className="sr-only" htmlFor="task-project-id">
             Project ID
           </label>
@@ -134,7 +146,7 @@ export function TaskCenterPage() {
         <TaskFlowPanel tasks={tasks} isLoading={tasksQuery.isLoading} />
         <TaskTable
           tasks={tasks}
-          isLoading={tasksQuery.isLoading || tasksQuery.isFetching}
+          isLoading={tasksQuery.isLoading}
           error={tasksQuery.error}
           retryingTaskId={
             retryMutation.isPending ? retryMutation.variables : undefined

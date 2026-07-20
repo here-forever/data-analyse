@@ -1,6 +1,6 @@
 # Implementation Status
 
-Last updated: 2026-07-16
+Last updated: 2026-07-20
 
 This document records what has already been implemented so the project can continue without losing context.
 
@@ -64,6 +64,9 @@ The project now also has a demo-ready MVP seed path for `prj_demo`, so the curre
 - Chart definition creation/list APIs backed by data views.
 - Dashboard/report layout creation/list APIs backed by chart resources.
 - Task center API for project-scoped workflow task status visibility.
+- File dataset materialization now creates a durable running task before work begins, advances through validation/source/materialization phases, and updates the same task to success or failure.
+- File and external dataset materialization report real per-batch progress while 1,000-row insert batches are written.
+- Batch progress uses an independent PostgreSQL session so task updates become visible without committing partial dataset metadata or physical table data.
 - Task failure records for import parsing, dataset materialization, cleaning execution, SQL execution/materialization, and chart/dashboard save actions.
 - Task retry API with persisted retry metadata and in-process synchronous replay for selected safe operations.
 - Retryable task execution currently covers dataset materialization, external table import, external SQL import, cleaning recipe execution, SQL data view materialization, chart save, and dashboard/report save.
@@ -78,9 +81,14 @@ The project now also has a demo-ready MVP seed path for `prj_demo`, so the curre
 - External table and read-only SQL preview APIs before formal import.
 - External table import into formal PostgreSQL-backed datasets.
 - External custom read-only SQL import into formal PostgreSQL-backed datasets.
+- Formal external table and SQL imports use bounded source-side cursor iteration with `fetchmany(1000)`; preview responses remain bounded lists.
+- PostgreSQL external reads explicitly enter a read-only transaction, and MySQL external reads apply a read-only session transaction policy.
 - External imports support edited field names, types, and nullability before materialization.
 - External import history/detail APIs backed by task records and retry metadata.
+- File and external import retries reuse the retry task for intermediate progress instead of creating duplicate materialization tasks.
 - External database imports are connected to task center, operation logs, basic lineage, dataset preview, and dataset quality profiling.
+- Formal dataset materialization now re-reads retained CSV/Excel sources as a row iterator instead of rebuilding a full source-row list.
+- Physical dataset and data-view writes share bounded 1,000-row insert batches, so iterable sources do not create one unbounded database payload.
 - Basic operation log and lineage records for implemented workflow actions.
 - Persisted dataset fields and physical table name mapping.
 - Demo seed script that creates/reuses a fixed `prj_demo` project, imports example CSV data, creates a cleaned dataset, saves a SQL data view, saves charts, saves a dashboard, and keeps task/lineage traceability.
@@ -123,11 +131,19 @@ Initial core tables have been modeled and migrated:
 - Chart configuration page with real Data View fields and ECharts rendering.
 - Dashboard/report source page with basic free-layout report mode.
 - Task center page with project filtering, status summary, workflow coverage, and recent task table.
+- Task center automatically polls every second while pending/running tasks exist and keeps the current table visible during background refresh.
 - Task center retry entry controlled by backend retry eligibility, with immediate list refresh and completion feedback.
 - Task center related-resource links for datasets, data views, charts, and dashboards, with target pages reading route query parameters for selection/highlighting.
 - Data source center external database panel for PostgreSQL/MySQL connection creation, encrypted credential rotation, metadata editing, recoverable archive/restore, saved connection listing, status display, connection error display, manual connection testing, schema discovery, preview-before-import, editable field confirmation, external table import, advanced read-only SQL import, and external import history/detail.
 - Tailwind design tokens now include the Workshop Toolkit-inspired sky, lilac, rose, and mint palette for gradual frontend visual-system adoption.
-- Placeholder pages remain only for features not yet implemented beyond the current data intake, dataset, cleaning, SQL, chart, dashboard, and task surfaces.
+- The application shell now uses a grouped, project-aware sidebar with compact desktop mode, a mobile navigation drawer, and persistent access to the complete data workflow.
+- The top workspace bar now provides route context, project identity, global navigation search, task-center access, and a consolidated workflow start menu instead of scattering similar action buttons.
+- The workspace now defaults to a guided ordinary-user view and offers a persistent Pro view switch for revealing cleaning, SQL, connector, history, and trace workflows.
+- The sidebar groups professional tools inside an advanced section that stays collapsed by default and automatically opens when Pro view or an advanced route requires it.
+- The workspace home now uses a dreamy pastel guided composition with three primary workflow actions, an original dataset illustration, and a collapsible professional workspace containing the complete data flow.
+- The data source center keeps local file intake visible by default while external databases, upload history, and formal dataset bridge details live inside an advanced disclosure panel.
+- Data source, import, dataset, cleaning, SQL, chart/dashboard, and task pages now share a consistent artistic workspace header and compact project toolbar treatment.
+- All currently routed workflow areas use implemented screens; the obsolete generic placeholder page has been removed.
 - Workspace home page now acts as a demo entry screen linking into the main implemented workflow surfaces.
 - Frontend API client tests.
 
@@ -140,6 +156,14 @@ Initial core tables have been modeled and migrated:
 - Frontend service.
 - Backend and frontend Dockerfiles.
 - `.env.example` for local configuration.
+- PowerShell 7 native development workflow for tool diagnostics, stack status/start/rebuild, backend tests, and frontend validation without a Python shell-compatibility wrapper.
+
+## Repository Hygiene
+
+- Generated caches, virtual environments, frontend dependencies/build output, local uploads, database dumps, and private environment files are excluded from Git.
+- Early agent-only skeleton execution plans and redundant directory placeholder files have been removed now that their milestones are represented by the roadmap, implementation status, and Git history.
+- The tracked data surface contains only a small synthetic demo CSV; Docker database and upload volumes remain explicitly outside source control.
+- Runtime data volumes are treated as durable state and must not be deleted as part of ordinary source cleanup.
 
 ## Verified So Far
 
@@ -148,10 +172,12 @@ Initial core tables have been modeled and migrated:
 - Backend health check is reachable at `http://127.0.0.1:8000/api/health`.
 - Alembic migration has been applied to Docker PostgreSQL.
 - Login, project creation, member/permission creation, CSV/Excel preview upload, formal dataset creation, cleaning execution, SQL data view saving, chart/dashboard saving, task center listing, failure task recording, retry request flow, related-resource navigation, external PostgreSQL/MySQL connection create/list/test flows, schema discovery, external preview, field-edited import, external table import retry, external import history/detail, external table import, and external read-only SQL import were verified through tests or API flows.
-- Backend test suite passed locally: 59 tests.
-- Frontend test suite passed: 28 tests.
+- Backend default test suite passed: 66 tests, with the opt-in PostgreSQL integration module skipped unless a disposable test database is configured.
+- The opt-in Docker PostgreSQL integration test passed against an isolated database: detached task progress was visible at 62/89/90 percent, uncommitted dataset metadata and physical tables stayed invisible, 2,501 external rows streamed through a real cursor, and an interruption after the first 1,000-row batch left no partial dataset, table, operation log, or lineage edge.
+- Frontend test suite passed: 34 tests.
 - Frontend lint passed.
 - Frontend build passed, with only the existing ECharts chunk-size warning.
+- Guided and Pro workspace modes, the collapsed advanced sidebar, and the ordinary/advanced data source states were visually checked against the rebuilt Docker frontend with no browser console errors.
 - Demo seed has been executed successfully through Docker Compose.
 - Frontend demo pages were checked through a headless Edge/Playwright pass against the running Docker stack: home, datasets, charts, dashboards, and tasks loaded expected demo content, and the chart page rendered an ECharts canvas.
 
@@ -164,14 +190,17 @@ Initial core tables have been modeled and migrated:
 - Parsed upload history records can restore their saved preview metadata without re-uploading the source file.
 - Data Sources now acts as the main local file intake overview and links into import previews, task traces, and formal datasets.
 - Formal dataset creation creates and populates a physical table.
+- Upload preview parsing still keeps rows in memory for field inference; only the later formal materialization pass is streaming in this milestone.
 - Dataset names are unique within a project to avoid accidental overwrite-like workflows.
 - Dataset quality profiling is computed on demand from materialized rows and is not yet cached or task-backed.
 - Operation logs and lineage records exist for the implemented workflow actions, but the lineage graph UI is not implemented yet.
 - Task center records synchronous workflow actions as completed or failed/retryable tasks.
+- Dataset materialization exposes phase and real per-batch progress inside the synchronous API request. Cancellation, heartbeat/stale-task recovery, and a separate worker process are not implemented yet.
 - Retry execution is synchronous inside the API request for selected safe operations; it is not yet backed by Redis/Celery/RQ or a distributed worker.
 - File preview parse failures are recorded against staged uploaded files; user-correctable validation failures remain non-retryable, while unexpected parse failures can keep retry metadata.
 - Authentication is still development-oriented and not production JWT/auth hardening.
-- External database imports currently preview and materialize bounded snapshots through row limits; scheduled sync, incremental sync, and streaming/large-table import are not implemented yet.
+- External database previews remain bounded snapshots, while formal external imports now stream source rows through database cursors and bounded local writes. Import limits and scheduled sync are still first-stage constraints.
+- External SQL result field inference uses the first cursor batch before continuing the stream; later incompatible values can still fail coercion and roll back the complete dataset.
 - External table/SQL import retry is synchronous inside the API request and replays the read/import operation, but it is not yet backed by a distributed worker.
 - External connection passwords use application-level encrypted storage, but production deployments still need protected key distribution, backup, and rotation procedures or a managed secret store.
 - External connection testing validates basic connectivity through the configured adapter and product-level read-only policy, but it does not yet prove the external database user lacks write privileges.
@@ -194,10 +223,10 @@ Future work must preserve these boundaries:
 
 ## Recommended Next Build Step
 
-The next implementation step should make larger imports reliable without jumping directly to a distributed platform:
+The next implementation step should make the now-visible progress useful without jumping directly to a distributed platform:
 
-1. Add chunked reads and batched PostgreSQL writes for larger file and external-database imports.
-2. Move long-running imports behind the existing task boundary with progress updates and cancellation-safe failure records.
-3. Introduce a lightweight worker adapter that can later switch to Redis/Celery or RQ before scheduled sync is added.
+1. Introduce a lightweight execution adapter with inline execution as the default and a background implementation behind the same interface.
+2. Let import endpoints return a durable task reference before long-running work finishes, then add cancellation requests, heartbeat checkpoints, and stale-running-task recovery.
+3. Move file preview parsing toward bounded/chunked readers and raise formal import limits only after memory and timeout behavior is measured.
 
 This order keeps the main data workflow traceable while avoiding premature Celery/RQ complexity.

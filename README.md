@@ -21,11 +21,11 @@ Implemented product surfaces include:
 
 - Local CSV/Excel import with durable source retention, preview recovery, editable fields, and import history.
 - Formal datasets materialized as physical PostgreSQL tables with pagination and quality profiling.
-- External PostgreSQL/MySQL read-only connections, discovery, preview, table/SQL import, history, and retry.
+- External PostgreSQL/MySQL read-only connections, discovery, preview, cursor-streamed table/SQL import, history, and retry.
 - Saveable cleaning recipes executed into derived datasets.
 - Project-scoped read-only SQL with reusable Data View materialization.
 - ECharts chart configuration and dashboard/report layout foundations.
-- Task Center with status, errors, related-resource links, and synchronous retry for supported operations.
+- Task Center with live batch progress, status, errors, related-resource links, and synchronous retry for supported operations.
 - Basic project collaboration, resource permissions, operation logs, and data lineage.
 
 Detailed status and known limitations are tracked in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).
@@ -57,15 +57,25 @@ Copy `.env.example` to `.env` and replace every placeholder before using local s
 
 Setup, migration, test, and troubleshooting commands are documented in [`docs/DEVELOPMENT_SETUP.md`](docs/DEVELOPMENT_SETUP.md). Backend- and frontend-specific notes are also available in [`backend/README.md`](backend/README.md) and [`frontend/README.md`](frontend/README.md).
 
+On Windows, run project commands in PowerShell 7 without loading a user profile:
+
+```powershell
+pwsh -NoLogo -NoProfile
+git status --short --branch
+docker compose ps
+```
+
+Use native Git, Docker, Python, and `npm.cmd` commands directly. The complete command reference is kept in [`docs/DEVELOPMENT_SETUP.md`](docs/DEVELOPMENT_SETUP.md).
+
 ## Validation
 
 ```powershell
-backend\.venv\Scripts\python -m ruff check backend
-backend\.venv\Scripts\python -m pytest backend\tests -q
-cd frontend
+docker compose exec -T backend python -m pytest -q
+Push-Location frontend
 npm.cmd run lint
 npm.cmd test -- --run
 npm.cmd run build
+Pop-Location
 ```
 
 GitHub Actions runs the equivalent backend and frontend checks for pushes and pull requests.

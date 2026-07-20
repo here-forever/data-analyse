@@ -163,10 +163,10 @@ export function ImportWizardPage() {
   }
 
   return (
-    <section className="space-y-5">
-      <div className="border-b border-line pb-5">
-        <p className="text-sm font-medium text-cyan">Import</p>
-        <h2 className="mt-1 text-2xl font-semibold text-ink">Import wizard</h2>
+    <section className="space-y-6">
+      <div className="workspace-page-header">
+        <p className="text-sm font-bold text-sky">Import</p>
+        <h2 className="mt-1 text-2xl font-bold text-ink">Import wizard</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
           Upload CSV or Excel files, inspect inferred fields, and create
           materialized datasets.

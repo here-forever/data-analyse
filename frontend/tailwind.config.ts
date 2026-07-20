@@ -5,11 +5,11 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#152033",
-        muted: "#64748b",
-        canvas: "#f7f8fc",
+        ink: "#182238",
+        muted: "#68758b",
+        canvas: "#f3f1fa",
         panel: "#ffffff",
-        line: "#d9e2ef",
+        line: "#dfe4ee",
         brand: "#2563eb",
         sky: "#3b9ee8",
         lilac: "#7657d8",
@@ -20,7 +20,8 @@ export default {
         amber: "#d97706",
       },
       boxShadow: {
-        panel: "0 18px 45px rgba(15, 23, 42, 0.08)",
+        panel: "0 12px 32px rgba(38, 45, 72, 0.07)",
+        menu: "0 24px 70px rgba(38, 45, 72, 0.18)",
       },
     },
   },

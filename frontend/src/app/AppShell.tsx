@@ -1,47 +1,127 @@
-import { NavLink, useLocation } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 
-import { navigationItems } from "./navigation";
+import { useWorkspaceStore } from "../features/workspace/workspaceStore";
+import { routeMeta } from "./navigation";
 import { routePlaceholders } from "./routes";
+import { CommandPalette } from "./shell/CommandPalette";
+import { Sidebar } from "./shell/Sidebar";
+import { DEFAULT_PROJECT_ID } from "./shell/shellLinks";
+import { TopBar } from "./shell/TopBar";
 
 export function AppShell() {
   const location = useLocation();
-  const currentRoute = routePlaceholders[location.pathname] ?? routePlaceholders["/"];
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const {
+    activeProjectId,
+    advancedView,
+    setActiveProject,
+    sidebarCollapsed,
+    toggleAdvancedView,
+    toggleSidebar,
+  } = useWorkspaceStore();
+  const currentRoute =
+    routePlaceholders[location.pathname] ?? routePlaceholders["/"];
+  const currentMeta = routeMeta[location.pathname] ?? routeMeta["/"];
+  const queryProjectId = useMemo(
+    () => new URLSearchParams(location.search).get("project_id"),
+    [location.search],
+  );
+  const projectId = queryProjectId ?? activeProjectId ?? DEFAULT_PROJECT_ID;
+
+  useEffect(() => {
+    if (queryProjectId && queryProjectId !== activeProjectId) {
+      setActiveProject(queryProjectId);
+    }
+  }, [activeProjectId, queryProjectId, setActiveProject]);
+
+  const closeCommandPalette = useCallback(() => {
+    setCommandPaletteOpen(false);
+  }, []);
+
+  useEffect(() => {
+    function openSearchShortcut(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const isEditing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+      if (event.key === "/" && !isEditing) {
+        event.preventDefault();
+        setCommandPaletteOpen(true);
+      }
+    }
+    document.addEventListener("keydown", openSearchShortcut);
+    return () => document.removeEventListener("keydown", openSearchShortcut);
+  }, []);
 
   return (
     <div className="min-h-screen bg-canvas text-ink">
-      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-line bg-panel px-5 py-6 lg:block">
-        <h1 className="text-xl font-semibold text-ink">Data Analysis System</h1>
-        <p className="mt-2 text-sm leading-6 text-muted">Integrated analytics workbench</p>
-        <nav className="mt-8 space-y-1" aria-label="Main navigation">
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
+      <div
+        className={[
+          "fixed inset-y-0 left-0 z-50 hidden transition-[width] duration-200 lg:block",
+          sidebarCollapsed ? "w-[88px]" : "w-[288px]",
+        ].join(" ")}
+      >
+        <Sidebar
+          advancedView={advancedView}
+          collapsed={sidebarCollapsed}
+          onToggleAdvancedView={toggleAdvancedView}
+          onToggleCollapsed={toggleSidebar}
+          projectId={projectId}
+        />
+      </div>
 
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) =>
-                  [
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition",
-                    isActive ? "bg-brand text-white" : "text-muted hover:bg-slate-100 hover:text-ink",
-                  ].join(" ")
-                }
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-              </NavLink>
-            );
-          })}
-        </nav>
-      </aside>
+      {mobileNavigationOpen ? (
+        <div className="fixed inset-0 z-[70] lg:hidden">
+          <button
+            aria-label="Close navigation overlay"
+            className="absolute inset-0 bg-ink/30 backdrop-blur-sm"
+            onClick={() => setMobileNavigationOpen(false)}
+            type="button"
+          />
+          <div className="absolute inset-y-0 left-0">
+            <Sidebar
+              advancedView={advancedView}
+              mobile
+              onClose={() => setMobileNavigationOpen(false)}
+              onNavigate={() => setMobileNavigationOpen(false)}
+              onToggleAdvancedView={toggleAdvancedView}
+              projectId={projectId}
+            />
+          </div>
+        </div>
+      ) : null}
 
-      <main className="lg:pl-72">
-        <header className="border-b border-line bg-panel px-6 py-4">
-          <p className="text-sm font-medium text-muted">Project workspace</p>
-          <p className="text-lg font-semibold text-ink">MVP foundation</p>
-        </header>
-        <div className="p-6">{currentRoute}</div>
+      <main
+        className={[
+          "min-h-screen transition-[padding] duration-200",
+          sidebarCollapsed ? "lg:pl-[88px]" : "lg:pl-[288px]",
+        ].join(" ")}
+      >
+        <TopBar
+          advancedView={advancedView}
+          onOpenMobileNavigation={() => setMobileNavigationOpen(true)}
+          onOpenSearch={() => setCommandPaletteOpen(true)}
+          onToggleAdvancedView={toggleAdvancedView}
+          pageDescription={currentMeta.description}
+          pageSection={currentMeta.section}
+          pageTitle={currentMeta.title}
+          projectId={projectId}
+        />
+        <div className="workspace-canvas min-h-[calc(100vh-80px)]">
+          <div className="mx-auto w-full max-w-[1720px] px-4 py-5 sm:px-5 lg:px-7 lg:py-6">
+            {currentRoute}
+          </div>
+        </div>
       </main>
+
+      <CommandPalette
+        onClose={closeCommandPalette}
+        open={commandPaletteOpen}
+        projectId={projectId}
+      />
     </div>
   );
 }

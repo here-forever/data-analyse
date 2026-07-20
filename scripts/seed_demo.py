@@ -478,14 +478,22 @@ def is_chart_json_value(value: Any) -> bool:
 
 def find_dataset(datasets: DatasetService, name: str) -> Dataset | None:
     return next(
-        (dataset for dataset in datasets.list_datasets(PROJECT_ID) if dataset.name == name),
+        (
+            dataset
+            for dataset in datasets.list_datasets(PROJECT_ID)
+            if dataset.name == name
+        ),
         None,
     )
 
 
 def find_data_view(data_views: DataViewService, name: str):
     return next(
-        (data_view for data_view in data_views.list_data_views(PROJECT_ID) if data_view.name == name),
+        (
+            data_view
+            for data_view in data_views.list_data_views(PROJECT_ID)
+            if data_view.name == name
+        ),
         None,
     )
 

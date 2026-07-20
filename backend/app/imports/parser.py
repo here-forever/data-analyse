@@ -1,4 +1,5 @@
 import csv
+from collections.abc import Iterator
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO, StringIO
@@ -10,6 +11,7 @@ from app.core.errors import AppError
 from app.imports.schemas import FieldType, ImportFieldPreview
 
 SUPPORTED_EXTENSIONS = {".csv", ".xlsx", ".xlsm"}
+TabularSource = bytes | Path
 
 
 class ParsedTabularFile:
@@ -50,6 +52,73 @@ def parse_tabular_file(file_name: str, content: bytes) -> ParsedTabularFile:
         fields=fields,
         rows=typed_rows,
     )
+
+
+def iter_typed_tabular_rows(
+    file_name: str,
+    source: TabularSource,
+    fields: list[ImportFieldPreview],
+) -> Iterator[dict[str, object | None]]:
+    """Stream typed rows from a retained source without building a full row list."""
+    raw_rows = iter_raw_rows(file_name, source)
+    try:
+        headers = normalize_headers(next(raw_rows))
+    except StopIteration as error:
+        raise AppError(
+            message="Uploaded file has no rows",
+            code="empty_file",
+            status_code=400,
+        ) from error
+
+    source_fields_by_order = {field.order: field for field in fields}
+    for field in fields:
+        if field.order >= len(headers):
+            raise AppError(
+                message="Dataset field order does not match source preview",
+                code="invalid_dataset_field_order",
+                status_code=400,
+            )
+
+    for raw_row in raw_rows:
+        if not any(value is not None for value in raw_row):
+            continue
+
+        normalized_row = coerce_row(headers, raw_row)
+        yield {
+            source_fields_by_order[field.order].name: coerce_value(
+                normalized_row.get(headers[field.order]),
+                field.inferred_type,
+            )
+            for field in fields
+        }
+
+
+def iter_raw_rows(file_name: str, source: TabularSource) -> Iterator[list[object | None]]:
+    extension = Path(file_name).suffix.lower()
+    if extension not in SUPPORTED_EXTENSIONS:
+        raise AppError(
+            message="Only CSV and Excel files are supported",
+            code="unsupported_file_type",
+            status_code=400,
+        )
+
+    if extension == ".csv":
+        if isinstance(source, bytes):
+            text = source.decode("utf-8-sig")
+            yield from (list(row) for row in csv.reader(StringIO(text)))
+            return
+
+        with source.open("r", encoding="utf-8-sig", newline="") as file_handle:
+            yield from (list(row) for row in csv.reader(file_handle))
+        return
+
+    workbook_source = BytesIO(source) if isinstance(source, bytes) else source
+    workbook = load_workbook(workbook_source, read_only=True, data_only=True)
+    try:
+        sheet = workbook.active
+        yield from (list(row) for row in sheet.iter_rows(values_only=True))
+    finally:
+        workbook.close()
 
 
 def parse_csv(content: bytes) -> list[list[object | None]]:

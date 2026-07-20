@@ -1,3 +1,5 @@
+from collections.abc import Callable, Iterable
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,7 +21,8 @@ class DatasetRepository:
         fields: list[DatasetFieldModel],
         table_map: DatasetTableMapModel,
         materialized_fields: list[ImportFieldPreview] | None = None,
-        materialized_rows: list[dict[str, object | None]] | None = None,
+        materialized_rows: Iterable[dict[str, object | None]] | None = None,
+        on_batch_inserted: Callable[[int], None] | None = None,
     ) -> DatasetModel:
         try:
             self.session.add(dataset)
@@ -28,10 +31,11 @@ class DatasetRepository:
             self.session.flush()
 
             if materialized_fields is not None and materialized_rows is not None:
-                DatasetMaterializer(self.session).create_table(
+                dataset.row_count = DatasetMaterializer(self.session).create_table(
                     table_name=table_map.physical_table_name,
                     fields=materialized_fields,
                     rows=materialized_rows,
+                    on_batch_inserted=on_batch_inserted,
                 )
 
             self.session.commit()

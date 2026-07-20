@@ -3,6 +3,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
+from app.core.errors import AppError
+from app.tasks.service import TaskService
 
 
 def login(client: TestClient) -> dict[str, str]:
@@ -24,6 +26,30 @@ def create_project(client: TestClient, headers: dict[str, str]) -> str:
 
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def test_running_task_progress_is_persisted_and_monotonic() -> None:
+    tasks = TaskService(initiator_id="usr_test")
+    task = tasks.start_task(
+        project_id="prj_test",
+        name="Materializing dataset",
+        task_type="dataset_materialization",
+        progress=5,
+    )
+
+    updated = tasks.report_progress(task.id, 45)
+
+    assert updated.status == "running"
+    assert updated.progress == 45
+    assert updated.started_at is not None
+    assert updated.finished_at is None
+
+    try:
+        tasks.update_progress(task.id, 20)
+    except AppError as error:
+        assert error.code == "invalid_task_progress"
+    else:
+        raise AssertionError("Expected task progress regression to be rejected")
 
 
 def create_dataset(client: TestClient, headers: dict[str, str], project_id: str) -> dict:
@@ -343,6 +369,16 @@ def test_dataset_materialization_retry_executes_real_operation(
     assert retry_payload["retry_task"]["task_type"] == failed_task["task_type"]
     assert retry_payload["retry_task"]["related_resource_type"] == "dataset"
     assert retry_payload["retry_task"]["can_retry"] is False
+
+    tasks_after_retry = client.get(
+        "/api/tasks",
+        headers=headers,
+        params={"project_id": project_id},
+    ).json()["items"]
+    materialization_tasks = [
+        task for task in tasks_after_retry if task["task_type"] == "dataset_materialization"
+    ]
+    assert len(materialization_tasks) == 2
 
     dataset_id = retry_payload["retry_task"]["related_resource_id"]
     preview_response = client.get(

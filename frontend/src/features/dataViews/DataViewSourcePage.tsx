@@ -220,13 +220,15 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
   const Icon = isCharts ? BarChart3 : LayoutDashboard;
 
   return (
-    <section className="space-y-5">
-      <div className="flex flex-col gap-4 border-b border-line pb-5 xl:flex-row xl:items-end xl:justify-between">
+    <section className="space-y-6">
+      <div className="workspace-page-header flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-sm font-medium text-cyan">
+          <p
+            className={`text-sm font-bold ${isCharts ? "text-sky" : "text-lilac"}`}
+          >
             {isCharts ? "Charts" : "Dashboards"}
           </p>
-          <h2 className="mt-1 text-2xl font-semibold text-ink">
+          <h2 className="mt-1 text-2xl font-bold text-ink">
             {isCharts ? "Chart source workspace" : "Dashboard source workspace"}
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
@@ -235,7 +237,10 @@ export function DataViewSourcePage({ mode }: DataViewSourcePageProps) {
           </p>
         </div>
 
-        <form className="flex w-full max-w-xl gap-2" onSubmit={submitProject}>
+        <form
+          className="workspace-project-toolbar flex w-full max-w-xl gap-2"
+          onSubmit={submitProject}
+        >
           <label className="sr-only" htmlFor={`${mode}-project-id`}>
             Project ID
           </label>

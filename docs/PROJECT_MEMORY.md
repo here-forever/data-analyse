@@ -1,6 +1,6 @@
 # Project Memory: Integrated Data Analysis System
 
-Last updated: 2026-07-16
+Last updated: 2026-07-20
 
 ## 1. Project Positioning
 
@@ -107,6 +107,15 @@ Use the combined approach:
 - Parse confirmed data into PostgreSQL for query, cleaning, analysis, and reporting.
 - Use temporary preview structures before formal dataset creation.
 - Formal datasets should be real database tables.
+
+Materialization reliability rule:
+
+- Re-read retained local sources through iterators during formal dataset creation instead of keeping a second full source-row list in memory.
+- Write physical dataset and data-view rows in bounded batches so file and external-source payloads do not become one unbounded database operation.
+- Stream formal PostgreSQL/MySQL table and read-only SQL imports with bounded cursor `fetchmany` calls; keep previews separately bounded and materialized for UI use.
+- Commit dataset metadata, fields, physical table creation, and all rows in one transaction so a source interruption cannot expose a partial dataset.
+- Persist task progress through an independent PostgreSQL session after each materialization batch without committing the main dataset transaction.
+- Keep preview inference behavior separate from final materialization; preview may remain sample-oriented while formal writes stay stream-friendly.
 
 The selected model is:
 
@@ -460,6 +469,9 @@ Frontend style:
 - Avoid the reference's overly plain white/gray feeling. The product should use a softer, more artistic data-workbench style with gentle layered backgrounds, tasteful multi-color accents, warm/cool contrast, and color-coded analytical surfaces.
 - Translate the Workshop Toolkit mood into airy sky blue, lilac, soft rose, mint, and warm neutral canvas layers, with clear white or lightly tinted work surfaces above them.
 - Use friendly, confident page titles and occasional small sticker-like accents for workspace home, onboarding, empty states, and completion feedback. Keep those accents original to this project and away from dense data operations.
+- Use an original dreamy-cartoon visual mood for the shell, workspace home, onboarding, and empty states through pastel color zones, playful icon compositions, and light illustrative details. The result should remain polished and credible for data work.
+- Treat progressive disclosure as a product-level interaction constraint: ordinary users start in a guided view with only the main actions, while a clear Pro view and contextual disclosure panels reveal SQL, cleaning, external connectors, history, trace, and configuration details.
+- Keep advanced capabilities directly reachable. Opening an advanced route should reveal its navigation context, and hiding advanced presentation must never remove the underlying workflow.
 - Preserve compact professional density in tables, SQL editors, cleaning forms, task lists, and chart controls. The surrounding shell can feel playful, but the work surface must remain stable, legible, and efficient.
 - Do not directly copy community-file artwork. Any future third-party visual asset must have a compatible license, documented source, and tracked attribution.
 - The interface should feel friendly and creative while still being professional: soft canvas tones, restrained shadows, subtle borders, calm typography, and polished spacing.
@@ -538,6 +550,23 @@ Guidelines:
 - Prefer branches for significant features.
 - Keep documentation updated when architecture decisions change.
 
+Development command rule:
+
+- Use PowerShell 7 for Windows development and automation commands.
+- Invoke it as `pwsh -NoLogo -NoProfile` so project commands do not depend on user profile configuration.
+- Run Git, Docker, Python, Node.js, and `npm.cmd` through their native commands; do not add Python wrappers solely to avoid legacy PowerShell syntax issues.
+- Prefer one clearly scoped command per line, quote paths containing spaces, and use PowerShell-native location and process controls for multi-step workflows.
+- PowerShell 7 supports `&&`, but keep validation and operational commands explicit so failures are easy to locate and reproduce.
+- Continue using `npm.cmd` on Windows when the execution policy blocks `npm.ps1`.
+
+Repository hygiene rule:
+
+- Do not commit virtual environments, dependency directories, build output, caches, runtime uploads, database dumps, credentials, or private environment files.
+- Keep tracked examples synthetic, minimal, and directly useful to the documented demo workflow.
+- Do not keep `.gitkeep` files after a directory contains tracked project files.
+- Treat PostgreSQL, Redis, and backend storage volumes as durable runtime state. Inspect and back them up before destructive cleanup; never include `docker compose down -v` in routine cleanup.
+- Remove completed temporary agent plans once their durable decisions are captured in the roadmap, project memory, implementation status, and Git history.
+
 Suggested early milestones:
 
 1. Project documentation and initial architecture notes.
@@ -588,13 +617,10 @@ Do not overbuild these in the first stage unless needed for architectural placeh
 
 ## 19. Next Recommended Step
 
-The next theoretical design step should be a phased roadmap:
+The project has passed skeleton, demo, source-side cursor streaming, transactional failure protection, and real materialization progress. Continue by separating task submission from execution without introducing a distributed platform too early:
 
-- MVP boundary.
-- Phase 1 module list.
-- Phase 1 page list.
-- Database conceptual model.
-- API boundary draft.
-- Development milestone order.
+1. Add a lightweight execution adapter with inline and local-background implementations behind one interface.
+2. Return durable task references before long imports finish, then add cancellation requests, heartbeat checkpoints, and stale-running-task recovery.
+3. Move file preview parsing toward bounded/chunked readers before increasing import limits.
 
-Only after the user approves the roadmap should implementation begin.
+Keep this work connected to operation logs, lineage, retry behavior, and durable source retention.

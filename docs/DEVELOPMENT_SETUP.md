@@ -1,6 +1,6 @@
 # Development Setup
 
-Last updated: 2026-07-16
+Last updated: 2026-07-20
 
 ## Current Environment Status
 
@@ -15,6 +15,7 @@ Verified on the current machine:
 - Docker is available.
 - Docker Compose is available.
 - WSL2 is available.
+- PowerShell 7.6.3 is available.
 
 Known local notes:
 
@@ -28,6 +29,20 @@ Use local commands for fast backend/frontend checks, and Docker Compose for inte
 1. Backend FastAPI tests using the local Python virtual environment.
 2. Frontend React tests/build using `npm.cmd`.
 3. Docker Compose for PostgreSQL, Redis, backend, and frontend integration.
+
+## PowerShell 7 Command Rule
+
+Use PowerShell 7 for Windows development commands and start it without loading a user profile:
+
+```powershell
+pwsh -NoLogo -NoProfile
+```
+
+Run Git, Docker, Python, Node.js, and `npm.cmd` as native commands. Prefer one clearly scoped command per line, quote paths containing spaces, and use `Push-Location` / `Pop-Location` when several commands must run from a subdirectory. PowerShell 7 supports `&&`, but project instructions and automation should not depend on dense shell command chains.
+
+Use `docker compose up -d` for the normal fast path with existing images. Add `--build` only when Dockerfiles or dependencies changed and the stack must be rebuilt.
+
+Do not add Python scripts solely to work around legacy PowerShell parsing or quoting behavior. Python remains the backend and data-processing runtime.
 
 ## Required Commands To Check Later
 
@@ -60,13 +75,20 @@ cd ..
 Run backend tests:
 
 ```powershell
-backend\.venv\Scripts\python -m pytest backend\tests -q
+backend\.venv\Scripts\python.exe -m pytest backend\tests -q
+```
+
+Run backend static checks:
+
+```powershell
+backend\.venv\Scripts\python.exe -m ruff check backend
+backend\.venv\Scripts\python.exe -m ruff format --check backend
 ```
 
 Run backend dev server:
 
 ```powershell
-backend\.venv\Scripts\python -m uvicorn app.main:app --app-dir backend --reload
+backend\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload
 ```
 
 ## Frontend Commands
@@ -100,6 +122,15 @@ Build frontend:
 ```powershell
 cd frontend
 npm.cmd run build
+cd ..
+```
+
+Run frontend lint and formatting checks:
+
+```powershell
+cd frontend
+npm.cmd run lint
+npm.cmd run format
 cd ..
 ```
 
@@ -137,17 +168,29 @@ Stop services:
 docker compose down
 ```
 
-Reset Docker-managed database/cache volumes:
+Destructively reset Docker-managed database, uploaded-file, cache, and dependency volumes:
 
 ```powershell
 docker compose down -v
 ```
+
+Do not run this command against a workspace containing data that must be retained. Export the PostgreSQL database and preserve the backend storage volume before any reset. Normal shutdown uses `docker compose down` without `-v`.
 
 Run backend database migrations:
 
 ```powershell
 docker compose exec backend python -m alembic upgrade head
 ```
+
+Run the opt-in PostgreSQL import reliability test only against a disposable database:
+
+```powershell
+docker compose exec -T postgres sh -lc 'createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" das_import_probe_local'
+docker compose exec -T -e DAS_TEST_POSTGRES_DATABASE=das_import_probe_local backend python -m pytest tests/integration/test_postgres_import_reliability.py -q -p no:cacheprovider
+docker compose exec -T postgres sh -lc 'dropdb -U "$POSTGRES_USER" --force das_import_probe_local'
+```
+
+The integration test intentionally creates physical dataset tables and transaction failures. Never point `DAS_TEST_POSTGRES_URL` or `DAS_TEST_POSTGRES_DATABASE` at the demo or production database.
 
 Local URLs:
 
