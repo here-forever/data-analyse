@@ -1,8 +1,10 @@
 from base64 import b64encode
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.routes.data_sources import get_data_source_service
@@ -16,6 +18,7 @@ from app.data_sources.connectors import (
     ConnectionTestResult,
     ExternalDatabaseConnectionConfig,
     ExternalQueryResult,
+    ExternalQueryStream,
     ExternalTable,
     ExternalTableColumn,
     build_connect_args,
@@ -140,6 +143,34 @@ class FakeTester:
             rows=[{"region": "West", "total_amount": 61.5}],
         )
 
+    @contextmanager
+    def stream_table(
+        self,
+        config: ExternalDatabaseConnectionConfig,
+        *,
+        schema_name: str,
+        table_name: str,
+        limit: int,
+    ) -> Iterator[ExternalQueryStream]:
+        result = self.read_table(
+            config,
+            schema_name=schema_name,
+            table_name=table_name,
+            limit=limit,
+        )
+        yield ExternalQueryStream(fields=result.fields, rows=iter(result.rows))
+
+    @contextmanager
+    def stream_read_only_sql(
+        self,
+        config: ExternalDatabaseConnectionConfig,
+        *,
+        sql: str,
+        limit: int,
+    ) -> Iterator[ExternalQueryStream]:
+        result = self.run_read_only_sql(config, sql=sql, limit=limit)
+        yield ExternalQueryStream(fields=result.fields, rows=iter(result.rows))
+
 
 class FlakyTableTester(FakeTester):
     def __init__(self) -> None:
@@ -164,6 +195,31 @@ class FlakyTableTester(FakeTester):
             table_name=table_name,
             limit=limit,
         )
+
+
+class InterruptingTableTester(FakeTester):
+    @contextmanager
+    def stream_table(
+        self,
+        config: ExternalDatabaseConnectionConfig,
+        *,
+        schema_name: str,
+        table_name: str,
+        limit: int,
+    ) -> Iterator[ExternalQueryStream]:
+        result = self.read_table(
+            config,
+            schema_name=schema_name,
+            table_name=table_name,
+            limit=limit,
+        )
+
+        def interrupted_rows() -> Iterator[dict[str, object | None]]:
+            for index in range(1000):
+                yield {"customer": f"Customer {index}", "amount": float(index)}
+            raise RuntimeError("external cursor interrupted after first batch")
+
+        yield ExternalQueryStream(fields=result.fields, rows=interrupted_rows())
 
 
 def login(client: TestClient) -> dict[str, str]:
@@ -950,6 +1006,67 @@ def test_data_source_service_imports_external_read_only_sql() -> None:
     )
 
 
+def test_external_stream_failure_rolls_back_partial_dataset_and_table() -> None:
+    session = create_test_session()
+    project_id, actor_id = create_project_in_session(session)
+    tester = InterruptingTableTester()
+    audit = AuditService(AuditRepository(session), actor_id=actor_id)
+    tasks = TaskService(TaskRepository(session), initiator_id=actor_id)
+    service = DataSourceService(
+        DataSourceRepository(session),
+        tester=tester,
+        audit=audit,
+    )
+    datasets = DatasetService(
+        DatasetRepository(session),
+        audit=audit,
+        tasks=tasks,
+    )
+    connection = service.create_connection(
+        ExternalDatabaseConnectionCreateRequest(
+            project_id=project_id,
+            name="Interrupting Warehouse",
+            database_type="postgresql",
+            host="warehouse.local",
+            database_name="analytics",
+            username="readonly_user",
+            password="secret-password",
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="cursor interrupted"):
+        service.import_external_table(
+            connection.id,
+            ExternalTableImportRequest(
+                project_id=project_id,
+                dataset_name="Interrupted Orders",
+                schema_name="public",
+                table_name="orders",
+                limit=2000,
+            ),
+            datasets,
+        )
+
+    assert datasets.list_datasets(project_id) == []
+    physical_tables = [
+        table_name
+        for table_name in inspect(session.get_bind()).get_table_names()
+        if table_name.startswith("ds_")
+    ]
+    assert physical_tables == []
+
+    import_tasks = [
+        task for task in tasks.list_tasks(project_id) if task.task_type == "external_table_import"
+    ]
+    assert len(import_tasks) == 1
+    assert import_tasks[0].status == "retryable"
+    assert "cursor interrupted" in (import_tasks[0].error_message or "")
+
+    logs = list(session.scalars(select(OperationLogModel)))
+    assert all(log.action != "dataset.created" for log in logs)
+    assert list(session.scalars(select(LineageEdgeModel))) == []
+
+
 def test_external_table_import_retry_replays_real_external_read() -> None:
     session = create_test_session()
     project_id, actor_id = create_project_in_session(session)
@@ -1011,12 +1128,22 @@ def test_external_table_import_retry_replays_real_external_read() -> None:
         sql_workspace=None,
         visualizations=None,
     )
+    reported_progress: list[int] = []
+    original_report_progress = tasks.report_progress
+
+    def capture_progress(task_id: str, progress: int):
+        reported_progress.append(progress)
+        return original_report_progress(task_id, progress)
+
+    tasks.report_progress = capture_progress
     retry_result = retry_executor.retry(failed_task.id)
 
     assert retry_result.original_task.status == "retryable"
     assert retry_result.retry_task.status == "success"
     assert retry_result.retry_task.related_resource_type == "dataset"
     assert len(tester.table_reads) == 2
+    assert reported_progress
+    assert all(35 < progress <= 90 for progress in reported_progress)
 
     dataset_id = retry_result.retry_task.related_resource_id
     assert dataset_id is not None

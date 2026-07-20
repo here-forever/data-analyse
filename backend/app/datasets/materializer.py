@@ -1,4 +1,4 @@
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import date, datetime
 
 from sqlalchemy import (
@@ -34,7 +34,8 @@ class DatasetMaterializer:
         table_name: str,
         fields: list[ImportFieldPreview],
         rows: Iterable[dict[str, object | None]],
-    ) -> None:
+        on_batch_inserted: Callable[[int], None] | None = None,
+    ) -> int:
         connection = self.session.connection()
         if inspect(connection).has_table(table_name):
             raise AppError(
@@ -46,11 +47,17 @@ class DatasetMaterializer:
         table = self._build_table(table_name=table_name, fields=fields)
         table.create(bind=connection, checkfirst=False)
 
+        inserted_rows = 0
         for batch in iter_batches(rows, MATERIALIZATION_BATCH_SIZE):
             self.session.execute(
                 table.insert(),
                 [normalize_row(row=row, fields=fields) for row in batch],
             )
+            inserted_rows += len(batch)
+            if on_batch_inserted is not None:
+                on_batch_inserted(inserted_rows)
+
+        return inserted_rows
 
     def _build_table(self, *, table_name: str, fields: list[ImportFieldPreview]) -> Table:
         metadata = MetaData()

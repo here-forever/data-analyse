@@ -21,11 +21,11 @@ Implemented product surfaces include:
 
 - Local CSV/Excel import with durable source retention, preview recovery, editable fields, and import history.
 - Formal datasets materialized as physical PostgreSQL tables with pagination and quality profiling.
-- External PostgreSQL/MySQL read-only connections, discovery, preview, table/SQL import, history, and retry.
+- External PostgreSQL/MySQL read-only connections, discovery, preview, cursor-streamed table/SQL import, history, and retry.
 - Saveable cleaning recipes executed into derived datasets.
 - Project-scoped read-only SQL with reusable Data View materialization.
 - ECharts chart configuration and dashboard/report layout foundations.
-- Task Center with status, errors, related-resource links, and synchronous retry for supported operations.
+- Task Center with live batch progress, status, errors, related-resource links, and synchronous retry for supported operations.
 - Basic project collaboration, resource permissions, operation logs, and data lineage.
 
 Detailed status and known limitations are tracked in [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md).

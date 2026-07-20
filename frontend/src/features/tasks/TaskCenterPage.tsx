@@ -24,6 +24,8 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   dashboard_save: "Dashboard/report save",
   dataset_materialization: "Dataset materialization",
   derived_dataset_materialization: "Derived dataset",
+  external_sql_import: "External SQL import",
+  external_table_import: "External table import",
   file_preview_parse: "File preview parse",
   sql_query_run: "SQL query",
   sql_data_view_materialization: "SQL data view",
@@ -72,6 +74,13 @@ export function TaskCenterPage() {
     queryKey: ["tasks", submittedProjectId],
     queryFn: () => listTasks(submittedProjectId),
     enabled: submittedProjectId.trim().length > 0,
+    refetchInterval: (query) =>
+      query.state.data?.items.some(
+        (task) => task.status === "pending" || task.status === "running",
+      )
+        ? 1000
+        : 5000,
+    refetchIntervalInBackground: true,
   });
 
   const tasks = useMemo(() => tasksQuery.data?.items ?? [], [tasksQuery.data]);
@@ -137,7 +146,7 @@ export function TaskCenterPage() {
         <TaskFlowPanel tasks={tasks} isLoading={tasksQuery.isLoading} />
         <TaskTable
           tasks={tasks}
-          isLoading={tasksQuery.isLoading || tasksQuery.isFetching}
+          isLoading={tasksQuery.isLoading}
           error={tasksQuery.error}
           retryingTaskId={
             retryMutation.isPending ? retryMutation.variables : undefined

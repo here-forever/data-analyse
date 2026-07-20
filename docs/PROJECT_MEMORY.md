@@ -1,6 +1,6 @@
 # Project Memory: Integrated Data Analysis System
 
-Last updated: 2026-07-19
+Last updated: 2026-07-20
 
 ## 1. Project Positioning
 
@@ -112,6 +112,9 @@ Materialization reliability rule:
 
 - Re-read retained local sources through iterators during formal dataset creation instead of keeping a second full source-row list in memory.
 - Write physical dataset and data-view rows in bounded batches so file and external-source payloads do not become one unbounded database operation.
+- Stream formal PostgreSQL/MySQL table and read-only SQL imports with bounded cursor `fetchmany` calls; keep previews separately bounded and materialized for UI use.
+- Commit dataset metadata, fields, physical table creation, and all rows in one transaction so a source interruption cannot expose a partial dataset.
+- Persist task progress through an independent PostgreSQL session after each materialization batch without committing the main dataset transaction.
 - Keep preview inference behavior separate from final materialization; preview may remain sample-oriented while formal writes stay stream-friendly.
 
 The selected model is:
@@ -614,10 +617,10 @@ Do not overbuild these in the first stage unless needed for architectural placeh
 
 ## 19. Next Recommended Step
 
-The project has passed skeleton and demo implementation. Continue strengthening the file and external-database ingestion boundary before introducing a distributed platform:
+The project has passed skeleton, demo, source-side cursor streaming, transactional failure protection, and real materialization progress. Continue by separating task submission from execution without introducing a distributed platform too early:
 
-1. Add source-side cursor streaming for external table and SQL imports while preserving bounded previews.
-2. Add per-batch task progress and cancellation-safe checkpoints without exposing partial dataset metadata.
-3. Introduce a lightweight worker adapter that can later move to Redis with Celery or RQ.
+1. Add a lightweight execution adapter with inline and local-background implementations behind one interface.
+2. Return durable task references before long imports finish, then add cancellation requests, heartbeat checkpoints, and stale-running-task recovery.
+3. Move file preview parsing toward bounded/chunked readers before increasing import limits.
 
 Keep this work connected to operation logs, lineage, retry behavior, and durable source retention.

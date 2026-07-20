@@ -1,6 +1,6 @@
 # Development Setup
 
-Last updated: 2026-07-19
+Last updated: 2026-07-20
 
 ## Current Environment Status
 
@@ -78,6 +78,13 @@ Run backend tests:
 backend\.venv\Scripts\python.exe -m pytest backend\tests -q
 ```
 
+Run backend static checks:
+
+```powershell
+backend\.venv\Scripts\python.exe -m ruff check backend
+backend\.venv\Scripts\python.exe -m ruff format --check backend
+```
+
 Run backend dev server:
 
 ```powershell
@@ -115,6 +122,15 @@ Build frontend:
 ```powershell
 cd frontend
 npm.cmd run build
+cd ..
+```
+
+Run frontend lint and formatting checks:
+
+```powershell
+cd frontend
+npm.cmd run lint
+npm.cmd run format
 cd ..
 ```
 
@@ -165,6 +181,16 @@ Run backend database migrations:
 ```powershell
 docker compose exec backend python -m alembic upgrade head
 ```
+
+Run the opt-in PostgreSQL import reliability test only against a disposable database:
+
+```powershell
+docker compose exec -T postgres sh -lc 'createdb -U "$POSTGRES_USER" -O "$POSTGRES_USER" das_import_probe_local'
+docker compose exec -T -e DAS_TEST_POSTGRES_DATABASE=das_import_probe_local backend python -m pytest tests/integration/test_postgres_import_reliability.py -q -p no:cacheprovider
+docker compose exec -T postgres sh -lc 'dropdb -U "$POSTGRES_USER" --force das_import_probe_local'
+```
+
+The integration test intentionally creates physical dataset tables and transaction failures. Never point `DAS_TEST_POSTGRES_URL` or `DAS_TEST_POSTGRES_DATABASE` at the demo or production database.
 
 Local URLs:
 

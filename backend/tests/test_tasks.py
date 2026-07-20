@@ -37,7 +37,7 @@ def test_running_task_progress_is_persisted_and_monotonic() -> None:
         progress=5,
     )
 
-    updated = tasks.update_progress(task.id, 45)
+    updated = tasks.report_progress(task.id, 45)
 
     assert updated.status == "running"
     assert updated.progress == 45
@@ -369,6 +369,16 @@ def test_dataset_materialization_retry_executes_real_operation(
     assert retry_payload["retry_task"]["task_type"] == failed_task["task_type"]
     assert retry_payload["retry_task"]["related_resource_type"] == "dataset"
     assert retry_payload["retry_task"]["can_retry"] is False
+
+    tasks_after_retry = client.get(
+        "/api/tasks",
+        headers=headers,
+        params={"project_id": project_id},
+    ).json()["items"]
+    materialization_tasks = [
+        task for task in tasks_after_retry if task["task_type"] == "dataset_materialization"
+    ]
+    assert len(materialization_tasks) == 2
 
     dataset_id = retry_payload["retry_task"]["related_resource_id"]
     preview_response = client.get(

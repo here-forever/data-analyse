@@ -1,3 +1,4 @@
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -408,6 +409,9 @@ class DataSourceService:
         connection_id: str,
         payload: ExternalTableImportRequest,
         datasets: DatasetService,
+        *,
+        task_id: str | None = None,
+        task_service: TaskService | None = None,
     ) -> ExternalDatasetImportResponse:
         connection = self._get_project_connection(
             connection_id=connection_id,
@@ -423,42 +427,48 @@ class DataSourceService:
             "connection_id": connection.id,
             **payload.model_dump(),
         }
+        materialization_started = False
         try:
-            source_result = self.tester.read_table(
+            with self.tester.stream_table(
                 self._connection_to_config(connection),
                 schema_name=payload.schema_name,
                 table_name=payload.table_name,
                 limit=payload.limit,
-            )
-            fields = payload.fields or source_result.fields
-            retry_payload["fields"] = [field.model_dump() for field in fields]
-            rows = remap_external_rows(
-                source_fields=source_result.fields,
-                target_fields=fields,
-                rows=source_result.rows,
-            )
+            ) as source_result:
+                fields = payload.fields or source_result.fields
+                retry_payload["fields"] = [field.model_dump() for field in fields]
+                rows = remap_external_rows(
+                    source_fields=source_result.fields,
+                    target_fields=fields,
+                    rows=source_result.rows,
+                )
+                materialization_started = True
+                dataset = datasets.create_materialized_dataset_from_rows(
+                    project_id=payload.project_id,
+                    name=payload.dataset_name.strip(),
+                    fields=fields,
+                    rows=rows,
+                    source_type="external_database_table",
+                    source_id=source_id,
+                    transform_type="external_table_import",
+                    task_type="external_table_import",
+                    retry_payload=retry_payload,
+                    expected_row_count=payload.limit,
+                    task_id=task_id,
+                    task_service=task_service,
+                )
         except Exception as error:
-            datasets.record_materialization_failure(
-                project_id=payload.project_id,
-                name=payload.dataset_name.strip(),
-                task_type="external_table_import",
-                error=error,
-                related_resource_type="external_database_table",
-                related_resource_id=source_id,
-                retry_payload=retry_payload,
-            )
+            if not materialization_started and task_id is None:
+                datasets.record_materialization_failure(
+                    project_id=payload.project_id,
+                    name=payload.dataset_name.strip(),
+                    task_type="external_table_import",
+                    error=error,
+                    related_resource_type="external_database_table",
+                    related_resource_id=source_id,
+                    retry_payload=retry_payload,
+                )
             raise
-        dataset = datasets.create_materialized_dataset_from_rows(
-            project_id=payload.project_id,
-            name=payload.dataset_name.strip(),
-            fields=fields,
-            rows=rows,
-            source_type="external_database_table",
-            source_id=source_id,
-            transform_type="external_table_import",
-            task_type="external_table_import",
-            retry_payload=retry_payload,
-        )
         self._record_dataset_imported(
             connection=connection,
             dataset_id=dataset.id,
@@ -482,6 +492,9 @@ class DataSourceService:
         connection_id: str,
         payload: ExternalSqlImportRequest,
         datasets: DatasetService,
+        *,
+        task_id: str | None = None,
+        task_service: TaskService | None = None,
     ) -> ExternalDatasetImportResponse:
         connection = self._get_project_connection(
             connection_id=connection_id,
@@ -494,41 +507,47 @@ class DataSourceService:
             "connection_id": connection.id,
             **payload.model_dump(),
         }
+        materialization_started = False
         try:
-            source_result = self.tester.run_read_only_sql(
+            with self.tester.stream_read_only_sql(
                 self._connection_to_config(connection),
                 sql=payload.sql,
                 limit=payload.limit,
-            )
-            fields = payload.fields or source_result.fields
-            retry_payload["fields"] = [field.model_dump() for field in fields]
-            rows = remap_external_rows(
-                source_fields=source_result.fields,
-                target_fields=fields,
-                rows=source_result.rows,
-            )
+            ) as source_result:
+                fields = payload.fields or source_result.fields
+                retry_payload["fields"] = [field.model_dump() for field in fields]
+                rows = remap_external_rows(
+                    source_fields=source_result.fields,
+                    target_fields=fields,
+                    rows=source_result.rows,
+                )
+                materialization_started = True
+                dataset = datasets.create_materialized_dataset_from_rows(
+                    project_id=payload.project_id,
+                    name=payload.dataset_name.strip(),
+                    fields=fields,
+                    rows=rows,
+                    source_type="external_database_sql",
+                    source_id=source_id,
+                    transform_type="external_sql_import",
+                    task_type="external_sql_import",
+                    retry_payload=retry_payload,
+                    expected_row_count=payload.limit,
+                    task_id=task_id,
+                    task_service=task_service,
+                )
         except Exception as error:
-            datasets.record_materialization_failure(
-                project_id=payload.project_id,
-                name=payload.dataset_name.strip(),
-                task_type="external_sql_import",
-                error=error,
-                related_resource_type="external_database_sql",
-                related_resource_id=source_id,
-                retry_payload=retry_payload,
-            )
+            if not materialization_started and task_id is None:
+                datasets.record_materialization_failure(
+                    project_id=payload.project_id,
+                    name=payload.dataset_name.strip(),
+                    task_type="external_sql_import",
+                    error=error,
+                    related_resource_type="external_database_sql",
+                    related_resource_id=source_id,
+                    retry_payload=retry_payload,
+                )
             raise
-        dataset = datasets.create_materialized_dataset_from_rows(
-            project_id=payload.project_id,
-            name=payload.dataset_name.strip(),
-            fields=fields,
-            rows=rows,
-            source_type="external_database_sql",
-            source_id=source_id,
-            transform_type="external_sql_import",
-            task_type="external_sql_import",
-            retry_payload=retry_payload,
-        )
         self._record_dataset_imported(
             connection=connection,
             dataset_id=dataset.id,
@@ -909,10 +928,9 @@ def remap_external_rows(
     *,
     source_fields: list[ImportFieldPreview],
     target_fields: list[ImportFieldPreview],
-    rows: list[dict[str, object | None]],
-) -> list[dict[str, object | None]]:
+    rows: Iterable[dict[str, object | None]],
+) -> Iterator[dict[str, object | None]]:
     source_fields_by_order = {field.order: field for field in source_fields}
-    materialized_rows: list[dict[str, object | None]] = []
 
     for target_field in target_fields:
         if target_field.order not in source_fields_by_order:
@@ -922,17 +940,30 @@ def remap_external_rows(
                 400,
             )
 
-    for row in rows:
-        materialized_row: dict[str, object | None] = {}
-        for target_field in target_fields:
-            source_field = source_fields_by_order[target_field.order]
-            materialized_row[target_field.name] = coerce_value(
-                row.get(source_field.name),
-                target_field.inferred_type,
-            )
-        materialized_rows.append(materialized_row)
+    return (
+        remap_external_row(
+            row=row,
+            source_fields_by_order=source_fields_by_order,
+            target_fields=target_fields,
+        )
+        for row in rows
+    )
 
-    return materialized_rows
+
+def remap_external_row(
+    *,
+    row: dict[str, object | None],
+    source_fields_by_order: dict[int, ImportFieldPreview],
+    target_fields: list[ImportFieldPreview],
+) -> dict[str, object | None]:
+    materialized_row: dict[str, object | None] = {}
+    for target_field in target_fields:
+        source_field = source_fields_by_order[target_field.order]
+        materialized_row[target_field.name] = coerce_value(
+            row.get(source_field.name),
+            target_field.inferred_type,
+        )
+    return materialized_row
 
 
 def external_import_task_to_history_item(task) -> ExternalImportHistoryItemResponse:

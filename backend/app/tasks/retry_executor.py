@@ -79,7 +79,11 @@ class TaskRetryExecutor:
                 return "file_import_preview", preview.id
 
             if operation == "dataset_materialization":
-                dataset = self.datasets.create_dataset(DatasetCreateRequest.model_validate(payload))
+                dataset = self.datasets.create_dataset(
+                    DatasetCreateRequest.model_validate(payload),
+                    task_id=task.id,
+                    task_service=self.tasks,
+                )
                 return "dataset", dataset.id
 
             if operation == "external_table_import":
@@ -88,6 +92,8 @@ class TaskRetryExecutor:
                     connection_id,
                     ExternalTableImportRequest.model_validate(payload),
                     self.datasets,
+                    task_id=task.id,
+                    task_service=self.tasks,
                 )
                 return "dataset", result.dataset.id
 
@@ -97,6 +103,8 @@ class TaskRetryExecutor:
                     connection_id,
                     ExternalSqlImportRequest.model_validate(payload),
                     self.datasets,
+                    task_id=task.id,
+                    task_service=self.tasks,
                 )
                 return "dataset", result.dataset.id
 

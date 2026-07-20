@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -28,3 +33,18 @@ class TaskRepository:
         if project_id:
             statement = statement.where(TaskModel.project_id == project_id)
         return list(self.session.scalars(statement))
+
+    @contextmanager
+    def independent_repository(self) -> Iterator[TaskRepository | None]:
+        bind = self.session.get_bind()
+        if bind.dialect.name == "sqlite":
+            # Test SQLite uses one shared in-memory connection and cannot model
+            # an independently committed progress transaction safely.
+            yield None
+            return
+
+        progress_session = Session(bind=bind, expire_on_commit=False)
+        try:
+            yield TaskRepository(progress_session)
+        finally:
+            progress_session.close()

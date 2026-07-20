@@ -1,6 +1,9 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+from itertools import chain
 from urllib.parse import quote_plus
 
 from sqlalchemy import (
@@ -24,6 +27,8 @@ from app.core.sql_safety import validate_read_only_sql
 from app.data_sources.schemas import DatabaseType
 from app.imports.parser import infer_type
 from app.imports.schemas import ImportFieldPreview
+
+EXTERNAL_CURSOR_BATCH_SIZE = 1000
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,12 @@ class ExternalQueryResult:
     rows: list[dict[str, object | None]]
 
 
+@dataclass(frozen=True)
+class ExternalQueryStream:
+    fields: list[ImportFieldPreview]
+    rows: Iterator[dict[str, object | None]]
+
+
 class ExternalDatabaseTester:
     def test_connection(self, config: ExternalDatabaseConnectionConfig) -> ConnectionTestResult:
         engine = create_engine(
@@ -73,8 +84,7 @@ class ExternalDatabaseTester:
         )
         try:
             with engine.connect() as connection:
-                if config.database_type == "mysql":
-                    connection.execute(text("SET SESSION TRANSACTION READ ONLY"))
+                set_external_connection_read_only(connection, config)
                 connection.execute(text("SELECT 1"))
         finally:
             engine.dispose()
@@ -124,6 +134,25 @@ class ExternalDatabaseTester:
         table_name: str,
         limit: int,
     ) -> ExternalQueryResult:
+        with self.stream_table(
+            config,
+            schema_name=schema_name,
+            table_name=table_name,
+            limit=limit,
+        ) as stream:
+            return ExternalQueryResult(fields=stream.fields, rows=list(stream.rows))
+
+    @contextmanager
+    def stream_table(
+        self,
+        config: ExternalDatabaseConnectionConfig,
+        *,
+        schema_name: str,
+        table_name: str,
+        limit: int,
+        batch_size: int = EXTERNAL_CURSOR_BATCH_SIZE,
+    ) -> Iterator[ExternalQueryStream]:
+        batch_size = bounded_external_batch_size(batch_size=batch_size, limit=limit)
         engine = create_engine(
             build_sqlalchemy_url(config),
             connect_args=build_connect_args(config),
@@ -131,6 +160,7 @@ class ExternalDatabaseTester:
         )
         try:
             with engine.connect() as connection:
+                set_external_connection_read_only(connection, config)
                 metadata = MetaData()
                 table = Table(
                     table_name,
@@ -138,8 +168,6 @@ class ExternalDatabaseTester:
                     autoload_with=connection,
                     schema=schema_name or None,
                 )
-                result = connection.execute(select(table).limit(limit))
-                rows = normalize_external_rows([dict(row._mapping) for row in result.all()])
                 fields = [
                     ImportFieldPreview(
                         name=column.name,
@@ -149,7 +177,18 @@ class ExternalDatabaseTester:
                     )
                     for index, column in enumerate(table.columns)
                 ]
-                return ExternalQueryResult(fields=fields, rows=rows)
+                streaming_connection = connection.execution_options(
+                    stream_results=True,
+                    max_row_buffer=batch_size,
+                )
+                result = streaming_connection.execute(select(table).limit(limit))
+                try:
+                    yield ExternalQueryStream(
+                        fields=fields,
+                        rows=iter_external_result_rows(result, batch_size=batch_size),
+                    )
+                finally:
+                    result.close()
         finally:
             engine.dispose()
 
@@ -160,7 +199,24 @@ class ExternalDatabaseTester:
         sql: str,
         limit: int,
     ) -> ExternalQueryResult:
+        with self.stream_read_only_sql(
+            config,
+            sql=sql,
+            limit=limit,
+        ) as stream:
+            return ExternalQueryResult(fields=stream.fields, rows=list(stream.rows))
+
+    @contextmanager
+    def stream_read_only_sql(
+        self,
+        config: ExternalDatabaseConnectionConfig,
+        *,
+        sql: str,
+        limit: int,
+        batch_size: int = EXTERNAL_CURSOR_BATCH_SIZE,
+    ) -> Iterator[ExternalQueryStream]:
         validate_read_only_sql(sql)
+        batch_size = bounded_external_batch_size(batch_size=batch_size, limit=limit)
         engine = create_engine(
             build_sqlalchemy_url(config),
             connect_args=build_connect_args(config),
@@ -168,19 +224,64 @@ class ExternalDatabaseTester:
         )
         try:
             with engine.connect() as connection:
+                set_external_connection_read_only(connection, config)
                 statement = text(
                     f"SELECT * FROM ({sql.rstrip().rstrip(';')}) AS das_external_query "
                     "LIMIT :das_limit"
                 )
-                result = connection.execute(statement, {"das_limit": limit})
-                rows = normalize_external_rows([dict(row._mapping) for row in result.all()])
-                columns = list(rows[0].keys()) if rows else list(result.keys())
-                return ExternalQueryResult(
-                    fields=infer_result_fields(columns=columns, rows=rows),
-                    rows=rows,
+                streaming_connection = connection.execution_options(
+                    stream_results=True,
+                    max_row_buffer=batch_size,
                 )
+                result = streaming_connection.execute(statement, {"das_limit": limit})
+                try:
+                    columns = list(result.keys())
+                    first_rows = fetch_external_result_rows(result, batch_size=batch_size)
+                    yield ExternalQueryStream(
+                        fields=infer_result_fields(columns=columns, rows=first_rows),
+                        rows=chain(
+                            first_rows,
+                            iter_external_result_rows(result, batch_size=batch_size),
+                        ),
+                    )
+                finally:
+                    result.close()
         finally:
             engine.dispose()
+
+
+def bounded_external_batch_size(*, batch_size: int, limit: int) -> int:
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    return min(batch_size, limit)
+
+
+def set_external_connection_read_only(connection, config: ExternalDatabaseConnectionConfig) -> None:
+    if config.database_type == "mysql":
+        connection.execute(text("SET SESSION TRANSACTION READ ONLY"))
+        return
+    if config.database_type == "postgresql":
+        connection.execute(text("SET TRANSACTION READ ONLY"))
+
+
+def fetch_external_result_rows(
+    result,
+    *,
+    batch_size: int,
+) -> list[dict[str, object | None]]:
+    raw_rows = result.fetchmany(batch_size)
+    return normalize_external_rows([dict(row._mapping) for row in raw_rows])
+
+
+def iter_external_result_rows(
+    result,
+    *,
+    batch_size: int,
+) -> Iterator[dict[str, object | None]]:
+    while rows := fetch_external_result_rows(result, batch_size=batch_size):
+        yield from rows
 
 
 def build_sqlalchemy_url(config: ExternalDatabaseConnectionConfig) -> str:

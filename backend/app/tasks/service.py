@@ -98,6 +98,18 @@ class TaskService:
             error_message=None,
         )
 
+    def report_progress(self, task_id: str, progress: int) -> Task:
+        if self.repository is None:
+            return self.update_progress(task_id, progress)
+
+        with self.repository.independent_repository() as progress_repository:
+            if progress_repository is None:
+                return self.get_task(task_id)
+            return TaskService(
+                progress_repository,
+                initiator_id=self.initiator_id,
+            ).update_progress(task_id, progress)
+
     def record_success(
         self,
         *,
